@@ -83,7 +83,8 @@ type WideGamutSurface interface {
 }
 
 // GlassPlacement is where a surface shows the system's glass
-// (Surface.PlaceGlass), under its content, in DIPs from its top left.
+// (Surface.PlaceGlass), under its content, in DIPs from its top left, or
+// over it, between the layers of the frame (GlassLayerSurface).
 type GlassPlacement struct {
 	// ID identifies the element showing the glass from one frame to the
 	// next.
@@ -99,6 +100,12 @@ type GlassPlacement struct {
 	Style int
 	// Tint colors the glass, nil for none.
 	Tint *Color
+	// Over shows the glass over the surface's frame, which leaves no hole
+	// for it, and over the first Layers of the layers placed with
+	// PlaceGlassLayers, under the others. Glass over the same layers shows
+	// in the order of the placements.
+	Over   bool
+	Layers int
 }
 
 // ViewSurface is a Surface that shows views of the platform's own under
@@ -122,6 +129,21 @@ type GlassSurface interface {
 	// PlaceGlass shows the glass where the content's last frame shows it,
 	// and hides the rest.
 	PlaceGlass(places []GlassPlacement)
+}
+
+// GlassLayerSurface is a GlassSurface that shows frames in layers around
+// the system's glass, so that the glass frosts what the frame painted under
+// it: the surface's own frames under all the glass, and layers of their own
+// over some of it (GlassPlacement.Over and Layers), each a part of the
+// frame that shows over the glass.
+type GlassLayerSurface interface {
+	GlassSurface
+	// PlaceGlassLayers shows layers at rects, in DIPs from the surface's
+	// top left, in order from the bottom, over the surface, and returns
+	// what a renderer draws each into, as Native does for the surface: a
+	// view, and its layer, which take no input. Layers past rects go;
+	// none leaves the glass under the surface.
+	PlaceGlassLayers(rects []RectF) []SurfaceNative
 }
 
 // MaterialSurface is a Surface whose window can show a material

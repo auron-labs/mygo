@@ -94,8 +94,12 @@ func (s *surface) EmbedView(view uintptr) (platform.WebView, error) {
 	return v, nil
 }
 
-// nsWindowBelow is NSWindowBelow, for addSubview:positioned:relativeTo:.
-const nsWindowBelow = ^uintptr(0)
+// nsWindowBelow and nsWindowAbove are NSWindowBelow and NSWindowAbove, for
+// addSubview:positioned:relativeTo:.
+const (
+	nsWindowBelow = ^uintptr(0)
+	nsWindowAbove = 1
+)
 
 // clipBackground fills the pane with c until the page paints, inside the
 // page's corners.
@@ -149,7 +153,8 @@ func (s *surface) PlaceWebViews(views []platform.WebViewPlacement) {
 			}
 		}
 		s.stackWebViews(shown)
-		if len(s.glassShown) > 0 {
+		if len(s.glassShown) > 0 && !s.glassOver {
+			// The glass under the surface goes over the web views.
 			s.stackGlass(s.glassShown, true)
 		}
 	})

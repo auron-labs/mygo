@@ -106,7 +106,10 @@ const (
 	// what the window shows under the frame, as a web view, shows through.
 	// The ops after it paint over it as over any transparent pixels. Below
 	// full Opacity, what the ops before it painted fades by Opacity
-	// instead, so what shows through blends over it.
+	// instead, so what shows through blends over it. A hole whose Start is
+	// set is where the system's glass shows, the frame's glass Start - 1
+	// in the order the window places it: a window that draws its frame in
+	// layers around the glass (Layers) draws none of the hole.
 	OpHole
 )
 

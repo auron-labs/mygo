@@ -445,11 +445,12 @@ type Renderer struct {
 
 	// synced tells that the layer presents with the Core Animation
 	// transaction, and holes that the last frame had holes (web views
-	// under it). pre fetches the drawables of frames following each
-	// other, and pending is a frame waiting for its drawable (present.go).
-	synced, holes bool
-	pre           presenter
-	pending       pendingFrame
+	// under it), or was asked to present with it (SetSync, held). pre
+	// fetches the drawables of frames following each other, and pending is
+	// a frame waiting for its drawable (present.go).
+	synced, holes, held bool
+	pre                 presenter
+	pending             pendingFrame
 	// post runs a function on the main thread (SetPost), fetched has the
 	// presenter's thread draw pending through it, and wake is what Ready
 	// was given while a frame was pending.
@@ -1657,6 +1658,13 @@ func hasHoles(s *scene.Scene) bool {
 	return false
 }
 
+// SetSync has the frames from now on present with the Core Animation
+// transaction, as frames with holes do, or no longer: those of layers
+// drawn between views of the system, which move with the window's other
+// changes, show together. The frame after the last held presents with it
+// too, as the views change.
+func (r *Renderer) SetSync(on bool) { r.held = on }
+
 // Ready reports whether a frame following the last one can draw at once,
 // as none waits for its drawable (present.go); otherwise wake runs, on the
 // main thread, once it has.
@@ -1708,7 +1716,7 @@ func (r *Renderer) render(s *scene.Scene) error {
 		// A frame not paced by the display, as a resize's, draws after
 		// the one waiting for its drawable, which fetches none for it
 		// when it takes its own.
-		if err := r.finishPending(!changes && !hasHoles(s) && !r.holes); err != nil {
+		if err := r.finishPending(!changes && !hasHoles(s) && !r.holes && !r.held); err != nil {
 			return err
 		}
 	}
@@ -1727,7 +1735,7 @@ func (r *Renderer) render(s *scene.Scene) error {
 	// transaction, so that they show together, as during a live resize.
 	// Others present as soon as the GPU has them, sparing a commit of the
 	// transaction for each.
-	holes := hasHoles(s)
+	holes := hasHoles(s) || r.held
 	sync := changed || holes || r.holes
 	r.holes = holes
 	if sync {

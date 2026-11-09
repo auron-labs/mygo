@@ -99,7 +99,7 @@ panes up to about 12 DIPs apart, and 0 keeps them apart. A group holds up
 to 8 panes. The elements are an ordinary row's and keep their own
 backgrounds, borders and hit areas; the glass paints behind them.
 
-## Native glass over a web view
+## Native glass
 
 On macOS 26 and later, `Glass{Native: true}` asks for the system's
 `NSGlassEffectView` instead of the shader:
@@ -109,15 +109,25 @@ ui.Row(c).Absolute().Top(0).Left(0).Right(0).Height(60).Radius(18).
 	Material(glass.Glass{Native: true})
 ```
 
-The system's glass is placed under the window's content and above a
-`ui.WebView`'s page, where it samples the page, so a toolbar of native UI
-over a web view gets real Liquid Glass, as macOS's own toolbars do.
-Elsewhere, and with Reduce Transparency, the shader draws it, which sees
-none of the page. The native glass samples what is under the surface: a web
-view's page, or the window's material, never the elements that the frame
-itself painted: the content is one surface above the glass. A native pane
-over arbitrary native UI would need the frame drawn in two surfaces, with
-the glass between them, which MyGo does not do; the shader draws those.
+A window drawing on the GPU draws each frame in layers around the glass:
+what the frame painted under the glass in the window's own layer, the glass
+over it, and what it painted over the glass, the element's children, in a
+layer of their own over the glass, the size of what they paint. The glass
+then frosts and bends the elements under it, as AppKit's toolbars frost
+the content scrolling under them, and over a `ui.WebView` the page too. Panes
+side by side, as a group of buttons, share one layer; a frame needing more
+than four, as panes stacked over each other's children, draws whole, the
+glass under it as below.
+
+A window drawing in memory, without a GPU, shows the glass under its
+frames instead: the material leaves a hole, through which the glass
+samples what is under the window's content, a web view's page or the
+window's material, not the elements the frame painted. Elsewhere, and with
+Reduce Transparency, the shader draws it.
+
+A shader effect painted over native glass, as a `Blur` or a `ScrollEdge`,
+reads what its layer painted under it, not the glass nor what is under it.
+The glass is cut to the clip rectangles around it, not to rounded ones.
 
 ## Accessibility
 

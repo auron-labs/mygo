@@ -166,8 +166,10 @@ type windowHost struct {
 	// the web views.
 	placed []platform.WebViewPlacement
 	views  []NativeWebView
-	// glassPlaced is where the surface shows the system's glass.
+	// glassPlaced is where the surface shows the system's glass, and
+	// glass the layers frames showing it draw in.
 	glassPlaced []platform.GlassPlacement
+	glass       glassLayers
 	// waiting tells that a frame paced by the display waits for waitingOn,
 	// the GPU renderer or refresh, to be able to draw it (displayWaiter);
 	// wake and displayReady draw it then, at the time the display asked
@@ -326,6 +328,9 @@ func (h *windowHost) event(ev platform.SurfaceEvent) bool {
 			h.gpu.Release()
 			h.gpu = nil
 		}
+		// And the layers' renderers, for the layers the surface gives again.
+		h.glass.releaseGPUs()
+		h.glass.natives = h.glass.natives[:0]
 		h.gpuTried, h.retryAt = false, time.Time{}
 		h.requestFrame()
 		return false
@@ -486,6 +491,10 @@ func (h *windowHost) present(s *scene.Scene) {
 	h.armIdle(frameIdle)
 	h.useWide(s, now)
 	defer h.ready()
+	if glassLayering != nil && glassLayering(h, s) {
+		h.path = "drawn on the GPU in layers around the system's glass"
+		return
+	}
 	if h.render(s) {
 		h.path = "drawn on the GPU"
 		if h.degraded {
@@ -747,9 +756,11 @@ func (h *windowHost) detach() {
 		h.gpu.Release()
 		h.gpu = nil
 	}
+	h.glass.releaseGPUs()
 	// The last frame, and the bitmaps it drew, go with the window (#1281).
 	h.last = nil
 	h.placed, h.views, h.glassPlaced = nil, nil, nil
+	h.glass = glassLayers{}
 }
 
 func (h *windowHost) requestFrame() {
@@ -986,21 +997,36 @@ func (h *windowHost) nativeGlass() bool {
 // placeGlass gives the surface where the frame shows the system's glass,
 // unless it is where the last frame showed it.
 func (h *windowHost) placeGlass(places []platform.GlassPlacement) {
+	if _, ok := h.conn.Surface.(platform.GlassSurface); !ok {
+		return
+	}
+	h.glass.places = append(h.glass.places[:0], places...)
+	h.sendGlass()
+}
+
+// sendGlass places the glass the engine placed last, between the layers
+// of the frame while it draws in layers.
+func (h *windowHost) sendGlass() {
 	s, ok := h.conn.Surface.(platform.GlassSurface)
 	if !ok {
 		return
 	}
-	if slices.EqualFunc(places, h.glassPlaced, sameGlassPlacement) {
+	places := h.glass.places
+	if glassLayered != nil {
+		places = glassLayered(&h.glass, places)
+	}
+	if h.glassPlaced != nil && slices.EqualFunc(places, h.glassPlaced, sameGlassPlacement) {
 		return
 	}
-	h.glassPlaced = append(h.glassPlaced[:0], places...)
+	h.glassPlaced = append(h.glassPlaced[:0:0], places...)
 	s.PlaceGlass(places)
 }
 
 // sameGlassPlacement reports whether a and b place the same glass.
 func sameGlassPlacement(a, b platform.GlassPlacement) bool {
 	if a.ID != b.ID || a.Frame != b.Frame || a.Clip != b.Clip || a.Radii != b.Radii ||
-		a.CornerRadius != b.CornerRadius || a.Style != b.Style || (a.Tint == nil) != (b.Tint == nil) {
+		a.CornerRadius != b.CornerRadius || a.Style != b.Style || (a.Tint == nil) != (b.Tint == nil) ||
+		a.Over != b.Over || a.Layers != b.Layers {
 		return false
 	}
 	return a.Tint == nil || *a.Tint == *b.Tint

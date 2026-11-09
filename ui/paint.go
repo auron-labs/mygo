@@ -47,6 +47,9 @@ type Painter struct {
 	// over the rest of its layer (matches.paint), which elsewhere paints
 	// nothing.
 	lifting *node
+	// glass marks the hole of the material being painted where the
+	// system's glass shows (scene.OpHole's Start), 0 for none.
+	glass int32
 }
 
 // opaqueBox is the box of an element painting an opaque background, and
@@ -573,7 +576,13 @@ func (p *Painter) fill(r Rect, radius [4]float32, bg Color, bw float32, bc Color
 func (p *Painter) background(e *node, box Rect, withBorder bool) {
 	border := withBorder && e.hasBorder()
 	if e.fill == fillMaterial {
+		if _, ok := e.material.(NativeGlassMaterial); ok && p.s == &p.rt.scene {
+			// The window's frame, which shows the glass, rather than a
+			// canvas's.
+			p.glass = p.rt.glassIndex(e)
+		}
 		e.material.PaintMaterial(p, box, e.radius)
+		p.glass = 0
 		if border {
 			p.border(e, box)
 		}

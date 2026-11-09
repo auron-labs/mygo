@@ -856,14 +856,16 @@ func TestNativeGlassSupported() (ok bool) {
 }
 
 // TestNativeGlass returns the first system's glass view of a window's
-// native content: its class, frame in its view's coordinates, and style.
+// native content: its class, frame in its window's content view, and
+// style.
 func TestNativeGlass(handle uintptr) (class string, frame [4]float64, style int, ok bool) {
 	w := theBackend.byNSWindow[id(handle)]
 	if w == nil || w.surface == nil {
 		return "", frame, 0, false
 	}
-	for _, v := range w.surface.glass {
-		r := msgRect(v, sel("frame"))
+	for _, g := range w.surface.glass {
+		v := g.view
+		r := msgConvertRectView(v, sel("convertRect:toView:"), msgRect(v, sel("bounds")), w.view)
 		return goString(send(v, "className")), [4]float64{r.Origin.X, r.Origin.Y, r.Size.Width, r.Size.Height}, sendInt(v, "style"), true
 	}
 	return "", frame, 0, false
@@ -876,7 +878,8 @@ func TestNativeGlassTint(handle uintptr) (red, green, blue, alpha float64) {
 	if w == nil || w.surface == nil {
 		return 0, 0, 0, 0
 	}
-	for _, v := range w.surface.glass {
+	for _, g := range w.surface.glass {
+		v := g.view
 		withPool(func() {
 			c := send(v, "tintColor")
 			if c == 0 {

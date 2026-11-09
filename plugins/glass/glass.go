@@ -36,10 +36,12 @@ type Glass struct {
 	// pressed, as AppKit's interactive glass does.
 	Interactive bool
 	// Native asks for the system's glass where the window has it (macOS
-	// 26 and later), drawn under the content: it samples what is under the
-	// window's surface, as a ui.WebView's page, not the elements the frame
-	// painted. Elsewhere, and with Reduce Transparency, the shader draws
-	// it.
+	// 26 and later): a window drawing on the GPU draws its frames in
+	// layers around it, and the glass frosts the elements under it, its
+	// children over it; one drawing in memory shows it under the frame,
+	// where it samples only what is under the window's content, as a
+	// ui.WebView's page. Elsewhere, and with Reduce Transparency, the
+	// shader draws it.
 	Native bool
 	// Clarity, from 0 to 1, makes panes as large as sidebars clearer,
 	// the content under them reading through: 0, the default, is
@@ -98,8 +100,8 @@ const (
 	Clear
 )
 
-// NativeGlass asks for the system's glass, which ui places under the
-// surface, where it has Liquid Glass.
+// NativeGlass asks for the system's glass, which ui places between the
+// layers of the window's frames, where it has Liquid Glass.
 func (g Glass) NativeGlass() (ui.NativeGlassSpec, bool) {
 	if !g.Native {
 		return ui.NativeGlassSpec{}, false
@@ -114,7 +116,7 @@ func (g Glass) NativeGlass() (ui.NativeGlassSpec, bool) {
 // PaintMaterial paints the glass over box, rounded by radii.
 func (g Glass) PaintMaterial(p *ui.Painter, box ui.Rect, radii [4]float32) {
 	if g.Native && p.NativeGlassSupported() && !p.Preferences().ReduceTransparency {
-		// The system's glass, under the surface, shows through this hole.
+		// The system's glass shows where this hole marks it.
 		p.Hole(box, radii)
 		return
 	}

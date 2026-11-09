@@ -24,9 +24,10 @@ g.Gap(6).Children(func() {
 })
 ```
 
-On macOS 26 and later, `glass.Glass{Native: true}` draws a toolbar over a
-`ui.WebView` with the system's `NSGlassEffectView`, which samples the page;
-elsewhere it falls back to the shader. With Reduce Transparency, the
+On macOS 26 and later, `glass.Glass{Native: true}` draws the glass with
+the system's `NSGlassEffectView`, between the layers of the window's
+frames, so that it frosts the elements under it, and a `ui.WebView`'s
+page; elsewhere it falls back to the shader. With Reduce Transparency, the
 materials draw opaque surfaces.
 
 `glass.ScrollEdge` is macOS's scroll edge effect, which content scrolling

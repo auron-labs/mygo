@@ -1491,11 +1491,35 @@ build` like mygo-runtime and released with the same version.
   around the union's bezel. `Glass{Native: true}` asks the window's
   surface for the system's glass: `ui.NativeGlassMaterial`, noted when the
   frame commits (`ui/nativeglass.go`), tells the surface where the glass
-  is (`platform.GlassSurface.PlaceGlass`). On macOS the surface puts an
-  `NSGlassEffectView` under the content and above the web views, and the
-  material leaves a hole where it shows, so the glass samples a web view's
-  page or the window's material, never the frame's own pixels; elsewhere,
-  and with Reduce Transparency, the shader draws it. The materials read
+  is (`platform.GlassSurface.PlaceGlass`), and the material leaves a hole
+  where it shows, which marks the glass (`scene.OpHole` with `Start`, set
+  by `Painter.Hole` while a `NativeGlassMaterial` paints). A window drawing
+  on the GPU whose surface shows layers (`platform.GlassLayerSurface`)
+  draws each frame in layers around the glass (`scene.Layers`,
+  `ui/window_glass.go`): `Main`, the frame less the glass's holes and less
+  what it painted over the glass, in the surface's own layer; the glass
+  over it; and over each glass, a layer holding what the frame painted
+  after it over it (and over what is already in that layer), in a frame of
+  its own the size of what it paints, its ops moved by the layer's origin
+  (folded into their transforms, or their rectangles and glyphs where they
+  have none). Glass whose layer holds nothing that overlaps the next glass
+  shares its layer with it, as a group of buttons; a frame needing more
+  than `maxGlassLayers` (4), or glass under a transform that turns it,
+  draws whole, the glass under it. Composited over `Main` with the glass
+  between them, the layers draw what the frame draws with the glass where
+  it painted it (`TestLayersDrawTheFrame`, on the CPU renderer). Each
+  layer has a GPU renderer of its own, and they and the surface's present
+  with Core Animation's transaction (`SetSync`), as the glass's views
+  move, so that they show together. On macOS the layers are views in a
+  `MyGoPassView` over the surface, which takes no input (the pointer goes
+  through to the surface), with each glass in a view cutting it to its
+  clip rectangle, between them in paint order (`GlassPlacement.Over` and
+  `Layers`); the glass then frosts the frame's own pixels. Without layers
+  (a window drawing in memory), the surface puts an `NSGlassEffectView`
+  under the content and above the web views, where the glass samples a web
+  view's page or the window's material, never the frame's own pixels;
+  elsewhere, and with Reduce Transparency, the shader draws it. The
+  materials read
   `ui.Painter.Preferences`: Reduce Transparency draws opaque surfaces,
   Increase Contrast lights the rim. Window-level glass takes a tint
   through `NSGlassEffectView`'s `tintColor`.
@@ -6455,7 +6479,7 @@ which npm allows only for packages that exist: the first release uses an
 | a web view scaled and rounded with native UI (`WebViewPlacement`) | the pane's bounds scale it, its layer's corners cut it | WebKitGTK zooms the page to its view's size, which `resize`s it at the same width; `draw` clipped to the corners on whole pixels | the visual's transform scales it, a rectangle clip cuts it |
 | WebViewAvailable (any goroutine, before `Run` too) | `WKWebView` is there, which macOS always has | WebKitGTK 4.1 (or 4.0), JavaScriptCore and libsoup load, as `webKit` loads them for a window showing a page | `internal/webview2` finds a runtime, or a `WebView2Loader.dll` next to the executable exports what `createEnvironment` calls; once an environment was made, whether that worked. A runtime whose files are there but whose browser is not passes, and fails later, making the web view |
 | secrets | Security.framework generic passwords in the login keychain (`SecItem*`), service and account as keytar | libsecret's `org.freedesktop.Secret.Generic` schema (attributes `service`, `account`), loaded on first use, libsecret 0.19 or later; no libsecret, no session bus (`g_bus_get_sync`) or no Secret Service on it (`G_DBUS_ERROR_SERVICE_UNKNOWN`, `NAME_HAS_NO_OWNER`, `NO_SERVER`) is `ErrUnsupported` | Credential Manager generic credentials (`CredWriteW`), target `service/account` |
-| vibrancy | all materials, behind pages and native UI; Liquid Glass (`NSGlassEffectView`) from macOS 26, the popover and HUD materials before, with a `tintColor` and the native UI's `Glass{Native}` placed over web views; frameless windows cut to `CornerRadius`; `SetActiveAppearance` through AppKit's private `_setForceMainAppearance:` | ignored | Windows 11 22H2 Mica, Acrylic, Tabbed, behind pages and native UI, in windows created with a material, which have no menu bar; Liquid Glass as Acrylic; frameless windows given a `CornerRadius` rounded by DWM |
+| vibrancy | all materials, behind pages and native UI; Liquid Glass (`NSGlassEffectView`) from macOS 26, the popover and HUD materials before, with a `tintColor` and the native UI's `Glass{Native}`, between the layers of its frames; frameless windows cut to `CornerRadius`; `SetActiveAppearance` through AppKit's private `_setForceMainAppearance:` | ignored | Windows 11 22H2 Mica, Acrylic, Tabbed, behind pages and native UI, in windows created with a material, which have no menu bar; Liquid Glass as Acrylic; frameless windows given a `CornerRadius` rounded by DWM |
 | active windows | the core's state, from key windows; materials follow AppKit's (`NSVisualEffectStateFollowsWindowActiveState`), but panels', flyouts' and kept ones' (`NSVisualEffectStateActive`) | the core's state, from GDK's focus; GTK's own title bar goes `:backdrop` as a focusable flyout takes the keyboard | the core's state, from `WM_ACTIVATE`; DWM's Mica and Acrylic follow the frame, kept active while the window's focusable flyout is (`WM_NCACTIVATE`) |
 | accent color and accessibility preferences | `NSColor.controlAccentColor` (10.14+), `accessibilityDisplayShouldReduceMotion` (10.12+), `accessibilityDisplayShouldReduceTransparency` and `accessibilityDisplayShouldIncreaseContrast` (10.10+), with `NSSystemColorsDidChangeNotification` and `NSWorkspaceAccessibilityDisplayOptionsDidChangeNotification`; no text scale | GTK's `gtk-enable-animations` and theme name, and the settings portal's accent, contrast and GNOME's `text-scaling-factor` (`ReadAll`, `SettingChanged`); no reduced transparency; the pointing devices from the default seat's, as they come and go | DWM's `AccentColor`, `SPI_GETCLIENTAREAANIMATION`, Personalize's `EnableTransparency`, `SPI_GETHIGHCONTRAST` and Accessibility's `TextScaleFactor`, with `WM_SETTINGCHANGE`; the pointing devices from `SM_MOUSEPRESENT`, `SM_DIGITIZER` and tablet mode, not followed as they are plugged in |
 | preferred languages | the global `AppleLanguages` (`CFPreferencesCopyValue`), not the app's | `LANGUAGE`, then `LC_ALL`, `LC_MESSAGES`, `LANG`; read when asked, no changes reported | `GetUserPreferredUILanguages`, `WM_SETTINGCHANGE` "intl" |

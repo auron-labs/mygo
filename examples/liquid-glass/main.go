@@ -1,5 +1,6 @@
 // Liquid-glass is a gallery of MyGo's Liquid Glass, driven by its sidebar:
-// the window's own material, the system's glass over a web page, merged
+// the window's own material, the system's glass over a web page and over
+// native UI, merged
 // groups, interactive buttons, scroll edges, clarity and blur.
 //
 //	go run ./examples/liquid-glass
@@ -20,6 +21,7 @@ const (
 	pageOverview    = "overview"
 	pageWindow      = "window"
 	pageNative      = "native"
+	pageNativeUI    = "nativeui"
 	pageMerged      = "merged"
 	pageInteractive = "interactive"
 	pageEdges       = "edges"
@@ -38,6 +40,7 @@ var (
 	overviewIcon    = icon(`<rect x="2" y="2" width="5" height="5" rx="1.3"/><rect x="9" y="2" width="5" height="5" rx="1.3"/><rect x="2" y="9" width="5" height="5" rx="1.3"/><rect x="9" y="9" width="5" height="5" rx="1.3"/>`)
 	windowIcon      = icon(`<rect x="1.5" y="2.5" width="13" height="11" rx="2"/><path d="M1.5 5.5h13"/>`)
 	nativeIcon      = icon(`<rect x="1.5" y="2.5" width="13" height="11" rx="2"/><rect x="3.5" y="4" width="9" height="3" rx="1.5"/>`)
+	nativeUIIcon    = icon(`<rect x="1.5" y="2.5" width="13" height="11" rx="2"/><rect x="3.5" y="4" width="9" height="3" rx="1.5"/><path d="M4 10h8M4 12h5"/>`)
 	mergedIcon      = icon(`<rect x="1.5" y="5" width="7" height="6" rx="3"/><rect x="7.5" y="5" width="7" height="6" rx="3"/>`)
 	interactiveIcon = icon(`<path d="M5 2.5v7.5l2-1.5 1.5 3.5 1.5-.7-1.5-3.3H11z"/>`)
 	clarityIcon     = icon(`<circle cx="8" cy="8" r="5.5"/><path d="M8 2.5v11"/>`)
@@ -61,6 +64,7 @@ var sidebarSections = []struct {
 	}},
 	{"Glass", []page{
 		{pageNative, "Over a page", nativeIcon},
+		{pageNativeUI, "Over native UI", nativeUIIcon},
 		{pageMerged, "Merged panes", mergedIcon},
 		{pageInteractive, "Interactive", interactiveIcon},
 		{pageClarity, "Clarity", clarityIcon},
@@ -193,6 +197,8 @@ func (g *gallery) view(c *ui.Context) {
 				g.windowPage(c)
 			case pageNative:
 				g.nativePage(c)
+			case pageNativeUI:
+				g.nativeUIPage(c)
 			case pageMerged:
 				g.mergedPage(c)
 			case pageInteractive:
@@ -268,7 +274,8 @@ func (g *gallery) overview(c *ui.Context) {
 		body  string
 	}{
 		{pageWindow, "Window glass", "VibrancyGlass and VibrancyGlassClear, tinted, with what is behind the window showing through."},
-		{pageNative, "Over a page", "The system's NSGlassEffectView under the content and above a web page."},
+		{pageNative, "Over a page", "The system's NSGlassEffectView over a web page."},
+		{pageNativeUI, "Over native UI", "The system's glass frosting cards MyGo draws, its buttons over it."},
 		{pageMerged, "Merged panes", "Panes that nearly touch bridge into one surface, with a live merge ratio."},
 		{pageInteractive, "Interactive", "Glass that grows while pressed and lights its rim on hover."},
 		{pageEdges, "Scroll edges", "Content scrolling under a bar, fading or frost with macOS's edge."},
@@ -324,6 +331,33 @@ func (g *gallery) nativePage(c *ui.Context) {
 			ui.Text(c, "Native glass over the page").Bold()
 			ui.Box(c).Grow(1)
 			ui.Text(c, "Scroll it").FontSize(12)
+		})
+	})
+}
+
+func (g *gallery) nativeUIPage(c *ui.Context) {
+	body(c, "The system's NSGlassEffectView over cards MyGo draws: the window draws its frames in layers around the glass, which frosts the cards scrolling under it, with the toolbar's text and button over it.", func() {
+		ui.Box(c).Height(400).Radius(16).Background(ui.Hex("#0b1020")).Clip().Children(func() {
+			ui.Scroll(c).Fill().Padding(84, 16, 16).Gap(10).Children(func() {
+				for i := range 14 {
+					a, b := cards[i%len(cards)][0], cards[i%len(cards)][1]
+					ui.Row(c).AlignSelf(ui.Stretch).Gap(12).Children(func() {
+						ui.Box(c).Size(64, 52).Radius(10).Gradient(a, b, 135)
+						ui.Column(c).Grow(1).Gap(2).Children(func() {
+							ui.Textf(c, "Card %d", i+1).Bold().TextColor(ui.RGB(255, 255, 255))
+							ui.Text(c, "Scroll it under the glass.").FontSize(12).TextColor(ui.RGBA(255, 255, 255, 0.6))
+						})
+					})
+				}
+			})
+			ui.Row(c).Absolute().Top(12).Left(12).Right(12).Height(52).Radius(26).Padding(0, 8, 0, 20).Gap(8).AlignItems(ui.Center).
+				Material(glass.Glass{Native: true}).Children(func() {
+				ui.Text(c, "Native glass over native UI").Bold()
+				ui.Box(c).Grow(1)
+				if ui.Button(c, "Share").Clicked() {
+					c.Toast("Shared")
+				}
+			})
 		})
 	})
 }
