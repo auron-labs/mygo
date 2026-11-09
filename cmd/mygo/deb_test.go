@@ -6,6 +6,7 @@ import (
 	"compress/gzip"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -189,7 +190,7 @@ func TestLinuxCommandJSON(t *testing.T) {
 }
 
 // TestBuildLinuxSlug builds an app with a slug of its own, which names the
-// executable, the Debian package and its directory, the update archive,
+// executable, the Debian and RPM packages and their directory, the update archive,
 // the PKGBUILD and install.sh's files and variables.
 func TestBuildLinuxSlug(t *testing.T) {
 	if testing.Short() {
@@ -218,7 +219,7 @@ func TestBuildLinuxSlug(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := filepath.Join(dir, "build", "linux-amd64")
-	for _, name := range []string{"cloud-music", "cloud-music.desktop", "cloud-music-0.1.0-linux-amd64.tar.gz", "cloud-music_0.1.0_amd64.deb", pkgbuildName} {
+	for _, name := range []string{"cloud-music", "cloud-music.desktop", "cloud-music-0.1.0-linux-amd64.tar.gz", "cloud-music_0.1.0_amd64.deb", pkgbuildName, "cloud-music-0.1.0-1.x86_64.rpm"} {
 		if _, err := os.Stat(filepath.Join(out, name)); err != nil {
 			t.Error(err)
 		}
@@ -258,6 +259,15 @@ func TestBuildLinuxSlug(t *testing.T) {
 	}
 	if !strings.Contains(string(pkgbuild), "\npkgname='cloud-music'\n") || !strings.Contains(string(pkgbuild), "\nsource=('cloud-music-0.1.0-linux-amd64.tar.gz')\n") || !strings.Contains(string(pkgbuild), "\ndepends=('gtk3')\n") {
 		t.Errorf("the PKGBUILD does not package cloud-music:\n%s", pkgbuild)
+	}
+	if rpm, err := exec.LookPath("rpm"); err == nil {
+		written := filepath.Join(out, "cloud-music-0.1.0-1.x86_64.rpm")
+		if out := rpmQuery(t, rpm, written, "-qp", "--qf", "%{NAME}\n[%{FILENAMES}\n]"); !strings.HasPrefix(out, "cloud-music\n") || !strings.Contains(out, "\n/opt/cloud-music/cloud-music\n") {
+			t.Errorf("the RPM does not package cloud-music:\n%s", out)
+		}
+		if depends, want := rpmRequirements(t, rpm, written), []string{"libgtk-3.so.0()(64bit)"}; !slices.Equal(depends, want) {
+			t.Errorf("RPM dependencies %q, want %q", depends, want)
+		}
 	}
 	script, err := os.ReadFile(filepath.Join(out, installScriptName))
 	if err != nil {

@@ -416,6 +416,15 @@ func buildPlatform(c *Config, goos, goarch string, opts buildOptions) ([]string,
 		}
 		artifacts = append(artifacts, deb)
 	}
+
+	if _, ok := rpmArch[goarch]; goos == "linux" && ok {
+		rpm, err := writeRpm(c, stage, c.slug(), goarch, installed)
+		if err != nil {
+			return nil, err
+		}
+		artifacts = append(artifacts, rpm)
+	}
+
 	files, err := writeArchive(c, stage, target, installed)
 	if err != nil {
 		return nil, err
