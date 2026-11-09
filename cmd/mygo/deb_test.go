@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"encoding/json"
 	"io"
 	"os"
 	"os/exec"
@@ -115,7 +116,7 @@ func TestLinuxWebView(t *testing.T) {
 	for _, webview := range []*bool{nil, new(true), new(false)} {
 		c := &Config{root: t.TempDir(), Name: "My App", Version: "1.0.0"}
 		c.Linux.WebView = webview
-		c.Linux.Depends = []string{"libayatana-appindicator3-1"}
+		c.Linux.Depends.Deb = []string{"libayatana-appindicator3-1"}
 		stage := t.TempDir()
 		if err := os.WriteFile(filepath.Join(stage, "my-app"), []byte("#!/bin/sh\n"), 0o755); err != nil {
 			t.Fatal(err)
@@ -185,6 +186,31 @@ func TestLinuxCommandJSON(t *testing.T) {
 	for _, command := range []string{`1`, `["my-app", 1]`} {
 		if _, err := load(command); err == nil || !strings.Contains(err.Error(), "linux.command") {
 			t.Errorf("linux.command %s: %v", command, err)
+		}
+	}
+}
+
+func TestLinuxDependsJSON(t *testing.T) {
+	for _, tc := range []struct {
+		json    string
+		want    linuxDepends
+		wantErr bool
+	}{
+		{`null`, linuxDepends{}, false},
+		{`[]`, linuxDepends{legacy: false}, false},
+		{`["libnotify4", "curl"]`, linuxDepends{Deb: []string{"libnotify4", "curl"}, legacy: true}, false},
+		{`{"deb": ["libnotify4"], "rpm": ["libnotify.so.4"], "arch": ["libnotify"]}`, linuxDepends{Deb: []string{"libnotify4"}, RPM: []string{"libnotify.so.4"}, Arch: []string{"libnotify"}, legacy: false}, false},
+		{`{"unknown": ["foo"]}`, linuxDepends{}, true},
+		{`"not-an-array-or-object"`, linuxDepends{}, true},
+		{`123`, linuxDepends{}, true},
+	} {
+		var got linuxDepends
+		err := json.Unmarshal([]byte(tc.json), &got)
+		if (err != nil) != tc.wantErr {
+			t.Errorf("Unmarshal %s: err %v, wantErr %v", tc.json, err, tc.wantErr)
+		}
+		if !tc.wantErr && (!slices.Equal(got.Deb, tc.want.Deb) || !slices.Equal(got.RPM, tc.want.RPM) || !slices.Equal(got.Arch, tc.want.Arch) || got.legacy != tc.want.legacy) {
+			t.Errorf("Unmarshal %s: got %+v, want %+v", tc.json, got, tc.want)
 		}
 	}
 }

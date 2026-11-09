@@ -76,24 +76,106 @@ func TestRpmVersion(t *testing.T) {
 }
 
 func TestRpmDepends(t *testing.T) {
-	for _, tc := range []struct {
-		arch    string
-		webview *bool
-		depends []string
-		want    []string
-	}{
-		{"amd64", nil, nil, []string{"libgtk-3.so.0()(64bit)", "libwebkit2gtk-4.1.so.0()(64bit)"}},
-		{"arm64", new(true), nil, []string{"libgtk-3.so.0()(64bit)", "libwebkit2gtk-4.1.so.0()(64bit)"}},
-		{"riscv64", new(false), nil, []string{"libgtk-3.so.0()(64bit)"}},
-		{"386", nil, nil, []string{"libgtk-3.so.0", "libwebkit2gtk-4.1.so.0"}},
-		{"arm", new(false), nil, []string{"libgtk-3.so.0"}},
-		{"amd64", new(false), []string{"libnotify >= 0.8", "libasound.so.2()(64bit)"}, []string{"libgtk-3.so.0()(64bit)", "libnotify >= 0.8", "libasound.so.2()(64bit)"}},
-	} {
-		l := Linux{WebView: tc.webview, Depends: tc.depends}
-		if got := l.rpmDepends(tc.arch); !slices.Equal(got, tc.want) {
-			t.Errorf("arch %s, webview %v, depends %q: got %q, want %q", tc.arch, l.webView(), tc.depends, got, tc.want)
+	t.Run("legacy", func(t *testing.T) {
+		for _, tc := range []struct {
+			arch              string
+			webview           *bool
+			deb               []string
+			want, wantUnknown []string
+		}{
+			{
+				arch:    "amd64",
+				webview: nil,
+				deb:     nil,
+				want:    []string{"libgtk-3.so.0()(64bit)", "libwebkit2gtk-4.1.so.0()(64bit)"},
+			},
+			{
+				arch:    "386",
+				webview: new(false),
+				deb:     nil,
+				want:    []string{"libgtk-3.so.0"},
+			},
+			{
+				arch:        "amd64",
+				webview:     new(false),
+				deb:         []string{"libnotify4", "libasound2t64 (>= 1.2)", "libfoo1 | libsecret-1-0:any", "libgtk-3-0", "libfoo2", "curl"},
+				want:        []string{"libgtk-3.so.0()(64bit)", "libnotify.so.4()(64bit)", "libasound.so.2()(64bit)", "libsecret-1.so.0()(64bit)", "curl"},
+				wantUnknown: []string{"libfoo2"},
+			},
+			{
+				arch:        "arm",
+				webview:     new(false),
+				deb:         []string{"libnotify4", "curl", "unknown-pkg"},
+				want:        []string{"libgtk-3.so.0", "libnotify.so.4", "curl"},
+				wantUnknown: []string{"unknown-pkg"},
+			},
+			{
+				arch:    "amd64",
+				webview: new(false),
+				deb:     []string{"libglib2.0-0t64", "libglib2.0-0", "ffmpeg", "libayatana-appindicator3-1"},
+				want: []string{
+					"libgtk-3.so.0()(64bit)", "libglib-2.0.so.0()(64bit)",
+					"libgio-2.0.so.0()(64bit)", "libgobject-2.0.so.0()(64bit)",
+					"libgmodule-2.0.so.0()(64bit)", "libgthread-2.0.so.0()(64bit)",
+					"/usr/bin/ffmpeg", "libayatana-appindicator3.so.1()(64bit)",
+				},
+			},
+			{
+				arch:    "arm",
+				webview: new(false),
+				deb:     []string{"libglib2.0-0", "ffmpeg"},
+				want: []string{
+					"libgtk-3.so.0", "libglib-2.0.so.0", "libgio-2.0.so.0",
+					"libgobject-2.0.so.0", "libgmodule-2.0.so.0", "libgthread-2.0.so.0",
+					"/usr/bin/ffmpeg",
+				},
+			},
+			{
+				arch:    "amd64",
+				webview: new(false),
+				deb: []string{
+					"gstreamer1.0-plugins-base", "gstreamer1.0-plugins-good",
+					"gstreamer1.0-plugins-bad", "gstreamer1.0-plugins-ugly",
+					"gstreamer1.0-libav", "gstreamer1.0-plugins-base",
+				},
+				want: []string{"libgtk-3.so.0()(64bit)"},
+				wantUnknown: []string{
+					"gstreamer1.0-plugins-base", "gstreamer1.0-plugins-good",
+					"gstreamer1.0-plugins-bad", "gstreamer1.0-plugins-ugly",
+					"gstreamer1.0-libav", "gstreamer1.0-plugins-base",
+				},
+			},
+		} {
+			l := Linux{WebView: tc.webview, Depends: linuxDepends{Deb: tc.deb, legacy: true}}
+			got, unknown := l.rpmDepends(tc.arch)
+			if !slices.Equal(got, tc.want) || !slices.Equal(unknown, tc.wantUnknown) {
+				t.Errorf("arch %s, webview %v, deb %q: got %q, %q; want %q, %q", tc.arch, l.webView(), tc.deb, got, unknown, tc.want, tc.wantUnknown)
+			}
 		}
-	}
+	})
+
+	t.Run("object", func(t *testing.T) {
+		for _, tc := range []struct {
+			arch    string
+			webview *bool
+			rpm     []string
+			want    []string
+		}{
+			{"amd64", nil, nil, []string{"libgtk-3.so.0()(64bit)", "libwebkit2gtk-4.1.so.0()(64bit)"}},
+			{"arm64", new(true), nil, []string{"libgtk-3.so.0()(64bit)", "libwebkit2gtk-4.1.so.0()(64bit)"}},
+			{"riscv64", new(false), nil, []string{"libgtk-3.so.0()(64bit)"}},
+			{"386", nil, nil, []string{"libgtk-3.so.0", "libwebkit2gtk-4.1.so.0"}},
+			{"arm", new(false), nil, []string{"libgtk-3.so.0"}},
+			{"amd64", new(false), []string{"libnotify >= 0.8", "libasound.so.2()(64bit)"}, []string{"libgtk-3.so.0()(64bit)", "libnotify >= 0.8", "libasound.so.2()(64bit)"}},
+			{"amd64", new(false), []string{"ffmpeg", "gstreamer1-plugins-base"}, []string{"libgtk-3.so.0()(64bit)", "ffmpeg", "gstreamer1-plugins-base"}},
+		} {
+			l := Linux{WebView: tc.webview, Depends: linuxDepends{RPM: tc.rpm, legacy: false}}
+			got, unknown := l.rpmDepends(tc.arch)
+			if !slices.Equal(got, tc.want) || len(unknown) != 0 {
+				t.Errorf("arch %s, webview %v, rpm %q: got %q, unknown %q; want %q", tc.arch, l.webView(), tc.rpm, got, unknown, tc.want)
+			}
+		}
+	})
 }
 
 func TestRPMMetadata(t *testing.T) {
@@ -126,6 +208,33 @@ func TestRPMMetadata(t *testing.T) {
 	}
 }
 
+func TestRPMLegacyDepends(t *testing.T) {
+	c := &Config{Name: "My App", Version: "1.0.0", License: "MIT"}
+	c.Linux.WebView = new(false)
+	c.Linux.Depends = linuxDepends{
+		Deb:    []string{"libglib2.0-0", "ffmpeg", "libayatana-appindicator3-1"},
+		legacy: true,
+	}
+	written, err := writeRpm(c, t.TempDir(), "my-app", "amd64", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rpm, err := exec.LookPath("rpm")
+	if err != nil {
+		t.Skip("no rpm to read the package")
+	}
+	want := []string{
+		"libgtk-3.so.0()(64bit)", "libglib-2.0.so.0()(64bit)",
+		"libgio-2.0.so.0()(64bit)", "libgobject-2.0.so.0()(64bit)",
+		"libgmodule-2.0.so.0()(64bit)", "libgthread-2.0.so.0()(64bit)",
+		"/usr/bin/ffmpeg", "libayatana-appindicator3.so.1()(64bit)",
+	}
+	slices.Sort(want)
+	if got := rpmRequirements(t, rpm, written); !slices.Equal(got, want) {
+		t.Errorf("Requires %q, want %q", got, want)
+	}
+}
+
 // TestRPM packages the same app as the Debian package, checking metadata,
 // file modes, link targets and content digests with the system's RPM reader.
 func TestRPM(t *testing.T) {
@@ -148,7 +257,10 @@ func TestRPM(t *testing.T) {
 	c.Linux.Comment = "Take $notes `now` & 'then'"
 	c.Linux.Maintainer = "Jane Doe <jane@example.com>"
 	c.Linux.Command = commandNames{"note-pad", "np"}
-	c.Linux.Depends = []string{"libnotify >= 0.8"}
+	c.Linux.Depends = linuxDepends{
+		Deb: []string{"libnotify4"},
+		RPM: []string{"libnotify >= 0.8"},
+	}
 	stage := t.TempDir()
 	for name, mode := range map[string]fs.FileMode{"note-pad": 0o755, "tool.sh": 0o700, "data/it's a file.txt": 0o600, "-v": 0o644} {
 		p := filepath.Join(stage, name)

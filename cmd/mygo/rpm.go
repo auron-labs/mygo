@@ -7,6 +7,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 
 	"go.digitalxero.dev/rpm"
@@ -22,23 +23,87 @@ var rpmRelease = "1"
 //   - https://github.com/goreleaser/nfpm/blob/main/rpm/rpm.go
 var rpmArch = map[string]string{"amd64": "x86_64", "arm64": "aarch64", "386": "i386", "arm": "armv7hl", "riscv64": "riscv64"}
 
+// rpmPackages maps common Debian package names from Linux.Depends to the
+// RPM requirements that provide them across distributions. GStreamer plugin
+// groups are left out because their package names and contents differ by
+// distribution, so this covers fewer packages than archPackages.
+// Shared-library SONAMEs receive the architecture suffix in rpmDepends.
+var rpmPackages = map[string][]string{
+	"libgtk-3-0":                 {"libgtk-3.so.0"},
+	"libwebkit2gtk-4.1-0":        {"libwebkit2gtk-4.1.so.0"},
+	"libayatana-appindicator3-1": {"libayatana-appindicator3.so.1"},
+	"libnotify4":                 {"libnotify.so.4"},
+	"libsecret-1-0":              {"libsecret-1.so.0"},
+	"libsoup-3.0-0":              {"libsoup-3.0.so.0"},
+	"libglib2.0-0": {
+		"libglib-2.0.so.0",
+		"libgio-2.0.so.0",
+		"libgobject-2.0.so.0",
+		"libgmodule-2.0.so.0",
+		"libgthread-2.0.so.0",
+	},
+	"libasound2": {"libasound.so.2"},
+	"libpulse0":  {"libpulse.so.0"},
+	"libnss3":    {"libnss3.so"},
+	"libssl3":    {"libssl.so.3"},
+	"libx11-6":   {"libX11.so.6"},
+	"libxtst6":   {"libXtst.so.6"},
+	"libvulkan1": {"libvulkan.so.1"},
+	"libgl1":     {"libGL.so.1"},
+	"libegl1":    {"libEGL.so.1"},
+	"ffmpeg":     {"/usr/bin/ffmpeg"},
+	"xdg-utils":  {"xdg-utils"},
+	"zenity":     {"zenity"},
+	"curl":       {"curl"},
+	"git":        {"git"},
+}
+
 // rpmDepends returns the RPM requirements of the app: GTK and WebKitGTK by
 // their shared library SONAMEs, which carry the "()(64bit)" marker on 64-bit
-// architectures, followed by l.Depends as written, since "()(64bit)" applies
-// only to shared library SONAMEs while l.Depends may name packages, version
-// ranges or explicit capabilities.
-func (l *Linux) rpmDepends(goarch string) []string {
+// architectures, followed by l.Depends.RPM as written, or when
+// l.Depends.legacy is true (linux.depends is a list of Debian packages), the
+// entries of debDepends mapped through rpmPackages along with the Debian
+// packages that have none rpmPackages knows.
+func (l *Linux) rpmDepends(goarch string) (depends, unknown []string) {
 	suffix := ""
 	switch goarch {
 	case "amd64", "arm64", "riscv64":
 		suffix = "()(64bit)"
 	}
 
-	depends := []string{"libgtk-3.so.0" + suffix}
-	if l.webView() {
-		depends = append(depends, "libwebkit2gtk-4.1.so.0"+suffix)
+	if !l.Depends.legacy {
+		depends = []string{"libgtk-3.so.0" + suffix}
+		if l.webView() {
+			depends = append(depends, "libwebkit2gtk-4.1.so.0"+suffix)
+		}
+		return append(depends, l.Depends.RPM...), nil
 	}
-	return append(depends, l.Depends...)
+
+	for _, dep := range l.debDepends() {
+		var found []string
+		for alt := range strings.SplitSeq(dep, "|") {
+			deb, _, _ := strings.Cut(strings.TrimSpace(alt), " ")
+			deb, _, _ = strings.Cut(deb, "(")
+			deb, _, _ = strings.Cut(deb, ":")
+			if found = rpmPackages[strings.TrimSuffix(deb, "t64")]; len(found) > 0 {
+				break
+			}
+		}
+		switch {
+		case len(found) == 0:
+			unknown = append(unknown, dep)
+		default:
+			for _, rpm := range found {
+				if strings.Contains(rpm, ".so") {
+					rpm += suffix
+				}
+				if !slices.Contains(depends, rpm) {
+					depends = append(depends, rpm)
+				}
+			}
+		}
+	}
+	return depends, unknown
 }
 
 // writeRpm packages the Linux app in stage with go.digitalxero.dev/rpm.
@@ -117,9 +182,12 @@ func writeRpm(c *Config, stage, name, goarch string, app []string) (string, erro
 		WithSummary(description).
 		WithDescription(description).
 		WithRelease(rpmRelease).
-		WithLicense(archLicense(c))
+		WithLicense(c.linuxLicense())
 
-	depends := c.Linux.rpmDepends(goarch)
+	depends, unknown := c.Linux.rpmDepends(goarch)
+	for _, dep := range unknown {
+		warnf("Leaving %s out of the RPM package's dependencies: it is a Debian package with no RPM package known for it", dep)
+	}
 	requires := builder.Requires()
 	for _, depend := range depends {
 		requires.AddParsed(depend)
@@ -135,9 +203,10 @@ func writeRpm(c *Config, stage, name, goarch string, app []string) (string, erro
 	if err != nil {
 		return "", err
 	}
-	defer out.Close()
-
 	_, err = p.WriteTo(out)
+	if closeErr := out.Close(); err == nil {
+		err = closeErr
+	}
 	if err != nil {
 		return "", err
 	}
