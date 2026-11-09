@@ -86,7 +86,7 @@ type Window struct {
 	dirty    []*scope
 	free     []*node
 	scopes   []*scope // freed, for new Children
-	tracked  bool // Update reruns nothing: all the view reads is tracked
+	tracked  bool     // Update reruns nothing: all the view reads is tracked
 	auditing bool
 	stale    []*scope
 	states   map[uint64]*freshState // Fresh's per-element state, as ui's
@@ -114,7 +114,7 @@ type Context struct {
 	// scope inside it runs too.
 	inDirty bool
 	replay  bool
-	fired   bool // a handler ran (Clicked) in this run
+	fired   bool   // a handler ran (Clicked) in this run
 	index   uint64 // Fresh's: the place of the next node in its scope
 }
 
@@ -133,30 +133,30 @@ type scope struct {
 }
 
 type node struct {
-	w                          *Window
-	kind                       kind
-	parent, first, last        *node
-	prev, next                 *node
-	scope                      *scope // that builds it
-	kids                       *scope // its Children's
-	key                        any
-	text                       string
-	gap, grow, height          float32
-	pad                        [4]float32
-	bg, color                  uint32
-	set, prevSet               prop
-	clicks                     int
-	hovered                    bool
-	hoverBy                    *scope
-	hoverRun                   uint32
-	needLayout, kidLayout      bool
-	queued, laid, needPaint    bool
-	dirtyKids                  []*node
-	availW                     float32
-	x, y, w2, h                float32
-	ax, ay                     float32 // Fresh's window position
-	id                         uint64  // Fresh's identity
-	scrollY                    float32
+	w                       *Window
+	kind                    kind
+	parent, first, last     *node
+	prev, next              *node
+	scope                   *scope // that builds it
+	kids                    *scope // its Children's
+	key                     any
+	text                    string
+	gap, grow, height       float32
+	pad                     [4]float32
+	bg, color               uint32
+	set, prevSet            prop
+	clicks                  int
+	hovered                 bool
+	hoverBy                 *scope
+	hoverRun                uint32
+	needLayout, kidLayout   bool
+	queued, laid, needPaint bool
+	dirtyKids               []*node
+	availW                  float32
+	x, y, w2, h             float32
+	ax, ay                  float32 // Fresh's window position
+	id                      uint64  // Fresh's identity
+	scrollY                 float32
 }
 
 // NewWindow makes a window of view, width DIPs wide.
