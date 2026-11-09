@@ -176,8 +176,9 @@ func Paint(p *ui.Painter, r ui.Rect, radius float32, g Glass) {
 // blur more, up to 10 DIPs; the bezel curves the last 36 DIPs of the
 // pane, at most half of it, and bends what shows through by up to 1.6
 // times that, mirroring what is inside it, as AppKit's do; light comes
-// from above and below, along a rim a pixel wide, and the pane casts no
-// shadow, as NSGlassEffectView's and the glass bezel's do not. Panes
+// from above and below, added along the rim within a DIP of the edge, and
+// a hairline a pixel wide around the pane darkens what is under it, most
+// at the sides, as plus darker does (and in dark mode only there). Panes
 // large as sidebars and inspectors are clearer by the glass's Clarity
 // (paneMaterial).
 func paint(p *ui.Painter, box ui.Rect, radii [4]float32, g Glass) {
@@ -190,13 +191,12 @@ func paint(p *ui.Painter, box ui.Rect, radii [4]float32, g Glass) {
 	}
 	mat := paneMaterial(min(box.W, box.H), p.Scale(), g.Clarity, g.Style == Clear, p.Theme().Dark)
 	if p.Preferences().HighContrast {
-		mat.rim = min(mat.rim+0.15, 1)
-		mat.rimWidth = max(mat.rimWidth, 1.5)
+		mat.highContrast(p.Scale())
 	}
 	if g.hover > 0 {
 		// As the pointer enters an interactive glass, its rim lights and
 		// its surface lifts a little.
-		mat.rim = min(mat.rim+0.18*g.hover, 1)
+		mat.rim = min(mat.rim+0.06*g.hover, 1)
 		mat.low = min(mat.low+0.02*g.hover, 1)
 		mat.high = min(mat.high+0.02*g.hover, 1)
 	}
@@ -206,7 +206,21 @@ func paint(p *ui.Painter, box ui.Rect, radii [4]float32, g Glass) {
 		mat.tint[3] = min(mat.tint[3]*a, 1)
 		mat.wideTint[3] = min(mat.wideTint[3]*a, 1)
 	}
-	p.Effect(Effect, box, radii, mat.blur, mat.params())
+	// The effect draws the edge too, a pixel around the pane.
+	o := 1 / p.Scale()
+	edge := ui.Rect{X: box.X - o, Y: box.Y - o, W: box.W + 2*o, H: box.H + 2*o}
+	for i := range radii {
+		if radii[i] > 0 {
+			radii[i] += o
+		}
+	}
+	p.Effect(Effect, edge, radii, mat.blur, mat.params())
+}
+
+// highContrast lights the rim more, and wider, as Increase Contrast asks.
+func (m *material) highContrast(scale float32) {
+	m.rim = min(m.rim+0.05, 1)
+	m.rimWidth = max(m.rimWidth, 1.5*scale)
 }
 
 // paintOpaque paints g as the opaque surface that the desktop asks for
@@ -248,8 +262,15 @@ func paneMaterial(m, s, k float32, clear, dark bool) material {
 		bezel:      bezel * s,
 		refraction: 1.6 * bezel * s,
 		rim:        at(paneRim),
-		rimWidth:   1,
+		rimWidth:   s,
 		light:      math.Pi / 2,
+		across:     edgeAcross,
+		along:      edgeAlong,
+	}
+	if dark {
+		// Brighter, and the edge darkens the sides alone.
+		mat.rim *= darkRim
+		mat.along = 0
 	}
 	switch {
 	case clear:
@@ -264,6 +285,18 @@ func paneMaterial(m, s, k float32, clear, dark bool) material {
 	}
 	return mat
 }
+
+// The edge of the glass, a pixel wide around it, darkens what is under it
+// by edgeAcross (in sRGB's components) where it faces across the light,
+// the sides, and by edgeAlong where it faces along it, as measured from
+// macOS 27's NSGlassEffectView over white, gray and black, in light mode;
+// in dark mode it darkens the sides alone. Its rim adds darkRim times the
+// light mode's light.
+const (
+	edgeAcross = 0.243
+	edgeAlong  = 0.082
+	darkRim    = 1.3
+)
 
 // paneTone is a parameter of a large pane's material at clarity 0
 // (frost, the measured material's), 0.5 (mid) and 1 (clear).
@@ -286,8 +319,9 @@ var (
 	// dark mode.
 	paneDarkLow  = paneTone{0.15, 0.15, 0.1}
 	paneDarkHigh = paneTone{0.51, 0.6, 0.85}
-	// paneRim is how bright the rim is lit.
-	paneRim = paneTone{0.35, 0.5, 0.5}
+	// paneRim is the light the rim adds where it faces the light, at its
+	// edge, in light mode; dark mode's is darkRim times it.
+	paneRim = paneTone{0.115, 0.165, 0.165}
 	// paneBezel is how wide the bezel curves, in DIPs.
 	paneBezel = paneTone{36, 48, 48}
 )

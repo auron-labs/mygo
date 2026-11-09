@@ -38,14 +38,22 @@ float3 glassTone(float3 c, float4 tone) {
 	return saturate(t + (c - l) * k);
 }
 
+// glassEdge is glass.metal's.
+float glassEdge(float l, float facing, float4 p3) {
+	float k = p3.w + (p3.z - p3.w) * (1 - facing);
+	return min(k / max(l, 1e-4), 0.67);
+}
+
 float4 effect(float2 p, Effect e) {
-	float t = max(-sdRoundRect(p, e.rect, e.radii), 0);
+	float inside = -sdRoundRect(p, e.rect, e.radii) - 1;
+	float t = max(inside, 0);
 	float bezel = e.p0.x;
 	float rimWidth = e.p0.w;
 	float2 n = float2(0, 0);
-	if (t < bezel || t < 3 * rimWidth) {
+	if (t < bezel || t < 3 * rimWidth || inside < 0.5) {
 		n = glassNormal(p, e.rect, e.radii);
 	}
+	float facing = abs(n.x * e.p3.x + n.y * e.p3.y);
 	float2 q = p;
 	if (t < bezel) {
 		q -= n * (e.p0.y * glassLens(t, bezel));
@@ -54,9 +62,13 @@ float4 effect(float2 p, Effect e) {
 	c += (e.p1.rgb - c) * e.p1.a;
 	if (e.p0.z > 0 && t < 3 * rimWidth) {
 		float r = t / rimWidth;
-		float a = e.p0.z * exp(-r * r);
-		float l = abs(n.x * e.p3.x + n.y * e.p3.y);
-		c += (l - c) * a;
+		c = min(c + facing * e.p0.z * exp(-r * r), 1);
 	}
-	return float4(c, 1);
+	float g = clamp(inside + 0.5, 0, 1);
+	if (g >= 1) {
+		return float4(c, 1);
+	}
+	float3 b = sampleBackdrop(e, p);
+	float a = glassEdge(0.2126 * b.r + 0.7152 * b.g + 0.0722 * b.b, facing, e.p3);
+	return float4(c * g, g + a * (1 - g));
 }

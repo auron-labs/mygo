@@ -88,14 +88,18 @@ func (g *Group) PaintMaterial(p *ui.Painter, box ui.Rect, _ [4]float32) {
 	}
 	mat := paneMaterial(minSide, p.Scale(), g.Clarity, g.Style == Clear, p.Theme().Dark)
 	if p.Preferences().HighContrast {
-		mat.rim = min(mat.rim+0.15, 1)
-		mat.rimWidth = max(mat.rimWidth, 1.5)
+		mat.highContrast(p.Scale())
 	}
 	tint := [4]float32{0, 0, 0, 0}
 	if g.Tint.A > 0 {
 		tint = [4]float32{float32(g.Tint.R) / 255, float32(g.Tint.G) / 255, float32(g.Tint.B) / 255, float32(g.Tint.A) / 255 * 0.88}
 	}
-	groupShader.Draw(p, box, shader.Options{
+	// The shader draws the edge too, a pixel around the panes.
+	o := 1 / p.Scale()
+	for i := range rects {
+		rects[i].X, rects[i].Y = rects[i].X+o, rects[i].Y+o
+	}
+	groupShader.Draw(p, ui.Rect{X: box.X - o, Y: box.Y - o, W: box.W + 2*o, H: box.H + 2*o}, shader.Options{
 		Uniforms: map[string]any{
 			"Count":      len(rects),
 			"Rects":      groupRects(rects),
@@ -111,6 +115,8 @@ func (g *Group) PaintMaterial(p *ui.Painter, box ui.Rect, _ [4]float32) {
 			"Merge":      g.Merge,
 			"Tint":       tint[:],
 			"Light":      []float32{float32(math.Cos(float64(mat.light))), float32(math.Sin(float64(mat.light)))},
+			"Across":     mat.across,
+			"Along":      mat.along,
 		},
 		BackdropBlur: mat.blur / p.Scale(),
 	})
@@ -164,6 +170,8 @@ var Curve float
 var Saturation float
 var Tint vec4
 var Light vec2
+var Across float
+var Along float
 
 func sdPane(p vec2, i int) float {
 	r := vec4(Rects[i*4], Rects[i*4+1], Rects[i*4+2], Rects[i*4+3])
@@ -226,16 +234,21 @@ func tone(c vec3) vec3 {
 }
 
 func Fragment(dst vec4, pos vec2) vec4 {
+	// d is in DIPs, px in pixels outside the panes: the edge is the pixel
+	// around them, which the glass's effect draws as well (glassEdge).
 	d := unionSDF(pos)
-	a := clamp(0.5-d*pixelScale(), 0.0, 1.0)
-	if a <= 0.0 {
+	px := d * pixelScale()
+	cover := clamp(1.5-px, 0.0, 1.0)
+	if cover <= 0.0 {
 		return vec4(0, 0, 0, 0)
 	}
+	g := clamp(0.5-px, 0.0, 1.0)
 	t := max(-d, 0.0)
 	n := vec2(0, 1)
-	if t < Bezel || t < 3.0*RimWidth {
+	if t < Bezel || t < 3.0*RimWidth || px > -0.5 {
 		n = normalAt(pos)
 	}
+	facing := abs(dot(n, Light))
 	q := pos
 	if t < Bezel {
 		q = q - n*(Refraction*lens(t, Bezel))
@@ -244,10 +257,17 @@ func Fragment(dst vec4, pos vec2) vec4 {
 	c = c + (Tint.rgb-c)*Tint.a
 	if Rim > 0.0 && t < 3.0*RimWidth {
 		r := t / RimWidth
-		lit := Rim * exp(-r*r)
-		l := abs(dot(n, Light))
-		c = c + (vec3(l, l, l) - c) * lit
+		lit := facing * Rim * exp(-r*r)
+		c = min(c+vec3(lit, lit, lit), vec3(1, 1, 1))
 	}
-	return vec4(c.x*a, c.y*a, c.z*a, a)
+	if g >= 1.0 {
+		return vec4(c.x, c.y, c.z, 1)
+	}
+	b := backdropSample(pos).rgb
+	l := 0.2126*b.r + 0.7152*b.g + 0.0722*b.b
+	k := Along + (Across-Along)*(1.0-facing)
+	a := min(k/max(l, 0.0001), 0.67)
+	edge := (cover - g) * a
+	return vec4(c.x*g, c.y*g, c.z*g, g+edge)
 }
 `)

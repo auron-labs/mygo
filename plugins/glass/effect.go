@@ -62,28 +62,33 @@ var blurEffect = &scene.Effect{
 //   - tint colors the glass, straight RGBA, by its alpha, and wideTint
 //     is it in extended sRGB, for a target that keeps colors outside the
 //     sRGB gamut (ui.Painter.EffectColor);
-//   - rim is how much the rim is lit, within about rimWidth of the edge:
-//     the more the edge faces the light coming from the angle light
-//     (radians, clockwise from the right, the opposite side alike), the
-//     lighter, and the less, the darker.
+//   - rim is the light added along the rim, within about rimWidth of the
+//     edge, the more the edge faces the light coming from the angle light
+//     (radians, clockwise from the right, the opposite side alike);
+//   - across and along are how much the edge, a pixel around the pane,
+//     darkens what is under it where it faces across the light (the
+//     sides, for light from above) and along it, as NSGlassEffectView's
+//     hairline does with plus darker (glassEdge).
 type material struct {
 	blur                         float32
 	bezel, refraction            float32
 	low, high, curve, saturation float32
 	tint, wideTint               [4]float32
 	rim, rimWidth, light         float32
+	across, along                float32
 }
 
 // params returns the effect's parameters, as its shaders read them: p0
-// the bezel, the refraction, the rim and its width; p1 the tint; p2 the
-// low, high, curve and saturation; p3 the direction of the light; p4 the
-// wide tint, which only the Metal shader reads.
+// the bezel, the refraction, the rim's light and its width; p1 the tint;
+// p2 the low, high, curve and saturation; p3 the direction of the light and
+// the edge's darkening across and along it; p4 the wide tint, which only
+// the Metal shader reads.
 func (m *material) params() [5][4]float32 {
 	return [5][4]float32{
 		{m.bezel, m.refraction, m.rim, m.rimWidth},
 		m.tint,
 		{m.low, m.high, m.curve, m.saturation},
-		{float32(math.Cos(float64(m.light))), float32(math.Sin(float64(m.light)))},
+		{float32(math.Cos(float64(m.light))), float32(math.Sin(float64(m.light))), m.across, m.along},
 		m.wideTint,
 	}
 }

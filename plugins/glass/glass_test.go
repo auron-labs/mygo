@@ -220,12 +220,12 @@ func TestPaneMaterial(t *testing.T) {
 				bezel := min(36, m/2)
 				blur := min(max(m*0.035, 1), 10) * s
 				light := paneMaterial(m, s, k, false, false)
-				if light.blur != blur || light.bezel != bezel*s || light.refraction != 1.6*bezel*s || light.rim != 0.35 ||
+				if light.blur != blur || light.bezel != bezel*s || light.refraction != 1.6*bezel*s || light.rim != 0.115 ||
 					light.low != 0.541 || light.high != 1 {
 					t.Errorf("light %v DIPs at %vx, clarity %v: %+v", m, s, k, light)
 				}
 				dark := paneMaterial(m, s, k, false, true)
-				if dark.blur != blur || dark.rim != 0.35 || dark.low != 0.15 || dark.high != 0.51 {
+				if dark.blur != blur || dark.rim != float32(0.115)*darkRim || dark.low != 0.15 || dark.high != 0.51 {
 					t.Errorf("dark %v DIPs at %vx, clarity %v: %+v", m, s, k, dark)
 				}
 			}
@@ -233,10 +233,10 @@ func TestPaneMaterial(t *testing.T) {
 	}
 	for _, m := range []float32{200, 300, 900} {
 		light, dark := paneMaterial(m, 2, 0.5, false, false), paneMaterial(m, 2, 0.5, false, true)
-		if !near(light.blur, 10) || !near(light.bezel, 96) || !near(light.rim, 0.5) || !near(light.low, 0.35) || light.high != 1 {
+		if !near(light.blur, 10) || !near(light.bezel, 96) || !near(light.rim, 0.165) || !near(light.low, 0.35) || light.high != 1 {
 			t.Errorf("light %v DIPs: %+v", m, light)
 		}
-		if !near(dark.blur, 10) || !near(dark.high, 0.6) || dark.low != 0.15 || !near(dark.rim, 0.5) {
+		if !near(dark.blur, 10) || !near(dark.high, 0.6) || dark.low != 0.15 || !near(dark.rim, 0.165*darkRim) {
 			t.Errorf("dark %v DIPs: %+v", m, dark)
 		}
 	}
@@ -244,12 +244,12 @@ func TestPaneMaterial(t *testing.T) {
 	prev := paneMaterial(100, 1, 0.5, false, false)
 	for m := float32(110); m <= 200; m += 10 {
 		mat := paneMaterial(m, 1, 0.5, false, false)
-		if mat.low > prev.low || mat.rim < prev.rim || mat.bezel < prev.bezel || mat.low < 0.35 || mat.rim > 0.5 {
+		if mat.low > prev.low || mat.rim < prev.rim || mat.bezel < prev.bezel || mat.low < 0.35 || mat.rim > 0.165 {
 			t.Errorf("%v DIPs: %+v after %+v", m, mat, prev)
 		}
 		prev = mat
 	}
-	if mid := paneMaterial(150, 1, 0.5, false, false); !near(mid.low, (0.541+0.35)/2) || !near(mid.rim, 0.425) {
+	if mid := paneMaterial(150, 1, 0.5, false, false); !near(mid.low, (0.541+0.35)/2) || !near(mid.rim, 0.14) {
 		t.Errorf("150 DIPs, half way: %+v", mid)
 	}
 	// Clear glass's tone is the same at any size.
@@ -266,7 +266,7 @@ func TestPaneClarity(t *testing.T) {
 	type tone struct{ blur, light, darkLow, darkHigh, rim, bezel float32 }
 	at := func(k float32) tone {
 		l, d := paneMaterial(400, 1, k, false, false), paneMaterial(400, 1, k, false, true)
-		if l.blur != d.blur || l.rim != d.rim || l.bezel != d.bezel {
+		if l.blur != d.blur || d.rim != l.rim*darkRim || l.bezel != d.bezel {
 			t.Errorf("clarity %v: light %+v and dark %+v differ", k, l, d)
 		}
 		return tone{l.blur, l.low, d.low, d.high, l.rim, l.bezel}
@@ -279,13 +279,13 @@ func TestPaneClarity(t *testing.T) {
 		k    float32
 		want tone
 	}{
-		{0, tone{10, 0.541, 0.15, 0.51, 0.35, 36}},
-		{0.25, tone{7.5, 0.4455, 0.15, 0.555, 0.425, 42}},
-		{0.5, tone{5, 0.35, 0.15, 0.6, 0.5, 48}},
-		{0.75, tone{3.5, 0.275, 0.125, 0.725, 0.5, 48}},
-		{1, tone{2, 0.2, 0.1, 0.85, 0.5, 48}},
-		{-1, tone{10, 0.541, 0.15, 0.51, 0.35, 36}},
-		{2, tone{2, 0.2, 0.1, 0.85, 0.5, 48}},
+		{0, tone{10, 0.541, 0.15, 0.51, 0.115, 36}},
+		{0.25, tone{7.5, 0.4455, 0.15, 0.555, 0.14, 42}},
+		{0.5, tone{5, 0.35, 0.15, 0.6, 0.165, 48}},
+		{0.75, tone{3.5, 0.275, 0.125, 0.725, 0.165, 48}},
+		{1, tone{2, 0.2, 0.1, 0.85, 0.165, 48}},
+		{-1, tone{10, 0.541, 0.15, 0.51, 0.115, 36}},
+		{2, tone{2, 0.2, 0.1, 0.85, 0.165, 48}},
 	} {
 		if got := at(c.k); !same(got, c.want) {
 			t.Errorf("clarity %v: %+v, want %+v", c.k, got, c.want)
@@ -344,7 +344,8 @@ func TestClarityZero(t *testing.T) {
 	for _, m := range []float32{1, 20, 72, 100, 150, 199, 200, 260, 900, 4000} {
 		for _, s := range []float32{1, 1.5, 2} {
 			bezel := min(36, m/2)
-			want := material{bezel: bezel * s, refraction: 1.6 * bezel * s, rim: 0.35, rimWidth: 1, light: math.Pi / 2}
+			want := material{bezel: bezel * s, refraction: 1.6 * bezel * s, rim: 0.115, rimWidth: s, light: math.Pi / 2,
+				across: edgeAcross, along: edgeAlong}
 			for _, c := range []struct {
 				clear, dark                        bool
 				blur, low, high, curve, saturation float32
@@ -356,6 +357,9 @@ func TestClarityZero(t *testing.T) {
 			} {
 				w := want
 				w.blur, w.low, w.high, w.curve, w.saturation = c.blur, c.low, c.high, c.curve, c.saturation
+				if c.dark {
+					w.rim, w.along = float32(0.115)*darkRim, 0
+				}
 				if got := paneMaterial(m, s, 0, c.clear, c.dark); got != w {
 					t.Errorf("%v DIPs at %vx, clear %v, dark %v: %+v, want %+v", m, s, c.clear, c.dark, got, w)
 				}
@@ -371,7 +375,7 @@ func TestClarityClear(t *testing.T) {
 	if frost.blur != clear.blur || frost.low != clear.low || frost.high != clear.high {
 		t.Errorf("tone: %+v and %+v", frost, clear)
 	}
-	if clear.rim != 0.5 || clear.bezel != 48 {
+	if clear.rim != 0.165 || clear.bezel != 48 {
 		t.Errorf("rim and bezel: %+v", clear)
 	}
 }

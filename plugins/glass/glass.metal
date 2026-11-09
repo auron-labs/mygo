@@ -1,8 +1,10 @@
 // The glass's effect in Metal Shading Language (see scene.Effect), as
 // pixels.go draws it on the CPU. The parameters are those of material:
-// p0 the bezel, the refraction, the rim and its width; p1 the tint; p2 the
-// low, high, curve and saturation; p3 the light's direction; p4 the tint in
+// p0 the bezel, the refraction, the rim's light and its width; p1 the tint;
+// p2 the low, high, curve and saturation; p3 the light's direction and the
+// edge's darkening where it faces across it and along it; p4 the tint in
 // extended sRGB, for a target that keeps colors outside the sRGB gamut.
+// The effect's shape is the pane grown by a pixel, its edge (glassEdge).
 
 // glassLens returns how far, as a fraction of the refraction, the glass
 // bends what shows through it t pixels inside its edge (lens).
@@ -45,14 +47,27 @@ float3 glassTone(float3 c, float4 tone) {
 	return clamp(t + (c - l) * k, 0.0f, 1.0f);
 }
 
+// glassEdge returns how much the edge, a pixel wide around the pane,
+// darkens what is under it, of lightness l: by k, where the edge faces
+// across the light, kAcross, and along it, kAlong, as Core Animation's plus
+// darker subtracts it, as an alpha that does so over the backdrop the
+// pane reads (glassEdge in pixels.go).
+float glassEdge(float l, float facing, float4 p3) {
+	float k = p3.w + (p3.z - p3.w) * (1.0f - facing);
+	return min(k / max(l, 1e-4f), 0.67f);
+}
+
 float4 effect(float2 p, Effect e, texture2d<float> backdrop) {
-	float t = max(-sdRoundRect(p, e.rect, e.radii), 0.0f);
+	// Inside the pane, which the edge surrounds.
+	float inside = -sdRoundRect(p, e.rect, e.radii) - 1.0f;
+	float t = max(inside, 0.0f);
 	float bezel = e.p0.x;
 	float rimWidth = e.p0.w;
 	float2 n = float2(0.0f);
-	if (t < bezel || t < 3.0f * rimWidth) {
+	if (t < bezel || t < 3.0f * rimWidth || inside < 0.5f) {
 		n = glassNormal(p, e.rect, e.radii);
 	}
+	float facing = abs(n.x * e.p3.x + n.y * e.p3.y);
 	float2 q = p;
 	if (t < bezel) {
 		q -= n * (e.p0.y * glassLens(t, bezel));
@@ -61,10 +76,15 @@ float4 effect(float2 p, Effect e, texture2d<float> backdrop) {
 	float4 tint = e.wide ? e.p4 : e.p1;
 	c += (tint.rgb - c) * tint.a;
 	if (e.p0.z > 0.0f && t < 3.0f * rimWidth) {
+		// The light along the rim, added, as plus lighter adds it.
 		float r = t / rimWidth;
-		float a = e.p0.z * exp(-r * r);
-		float l = abs(n.x * e.p3.x + n.y * e.p3.y);
-		c += (l - c) * a;
+		c = min(c + facing * e.p0.z * exp(-r * r), 1.0f);
 	}
-	return float4(c, 1.0f);
+	float g = clamp(inside + 0.5f, 0.0f, 1.0f);
+	if (g >= 1.0f) {
+		return float4(c, 1.0f);
+	}
+	float3 b = sampleBackdrop(backdrop, e, p);
+	float a = glassEdge(0.2126f * b.r + 0.7152f * b.g + 0.0722f * b.b, facing, e.p3);
+	return float4(c * g, g + a * (1.0f - g));
 }
