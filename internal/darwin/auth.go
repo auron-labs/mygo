@@ -141,11 +141,15 @@ func (w *window) clientCertificate(space id, handler uintptr) {
 		callBlock(handler, authDefault, 0)
 		return
 	}
+	certs, identities := keychainIdentities(api)
+	// The array owns the identities, which an answer uses: it lives as
+	// long as they do.
+	defer cfRelease(uintptr(identities))
 	resp := w.h.ClientCertificateRequested(platform.ClientCertificateRequest{
 		Host:         goString(send(space, "host")),
 		Port:         sendInt(space, "port"),
 		IsProxy:      sendBool(space, "isProxy"),
-		Certificates: keychainIdentities(api),
+		Certificates: certs,
 	})
 	switch {
 	case resp.Default:
@@ -154,7 +158,7 @@ func (w *window) clientCertificate(space id, handler uintptr) {
 		withPool(func() {
 			const forSession = 1 // NSURLCredentialPersistenceForSession
 			cred := send(class("NSURLCredential"), "credentialWithIdentity:certificates:persistence:",
-				resp.Certificate.Native, uintptr(send(class("NSArray"), "array")), forSession)
+				resp.Certificate.Native, uintptr(identityCertificates(api, resp.Certificate.Native)), forSession)
 			callBlock(handler, authUseCredential, uintptr(cred))
 		})
 	default:
@@ -162,12 +166,27 @@ func (w *window) clientCertificate(space id, handler uintptr) {
 	}
 }
 
+// identityCertificates returns the array of certificates an identity's
+// credential carries: the identity's own certificate, which the
+// handshake needs.
+func identityCertificates(api *trustFuncs, identity uintptr) id {
+	chain := send(class("NSMutableArray"), "array")
+	cert, _, _ := purego.SyscallN(api.identityCert, identity)
+	if cert == 0 {
+		return chain
+	}
+	defer cfRelease(cert)
+	send(chain, "addObject:", cert)
+	return chain
+}
+
 // keychainIdentities lists the identities of the keychain, their
 // certificates DER-encoded with their common names. The array
-// SecItemCopyMatching returns owns the identities; an answer uses one
-// while it is alive, which is until clientCertificate returns.
-func keychainIdentities(api *trustFuncs) []platform.ClientCertificate {
+// SecItemCopyMatching returns owns the identities; it is returned too,
+// for the caller to keep alive as long as an answer uses them.
+func keychainIdentities(api *trustFuncs) ([]platform.ClientCertificate, id) {
 	var certs []platform.ClientCertificate
+	var array id
 	withPool(func() {
 		query := send(class("NSMutableDictionary"), "dictionary")
 		send(query, "setObject:forKey:", api.secClassIdent, api.secClass)
@@ -177,9 +196,9 @@ func keychainIdentities(api *trustFuncs) []platform.ClientCertificate {
 		if status, _, _ := purego.SyscallN(api.item, uintptr(query), uintptr(unsafe.Pointer(&result))); int32(status) != 0 || result == 0 {
 			return // errSecItemNotFound, among the others: no identities
 		}
-		defer release(id(result))
-		for i, n := 0, sendInt(id(result), "count"); i < n; i++ {
-			identity := send(id(result), "objectAtIndex:", uintptr(i))
+		array = id(result)
+		for i, n := 0, sendInt(array, "count"); i < n; i++ {
+			identity := send(array, "objectAtIndex:", uintptr(i))
 			cert, _, _ := purego.SyscallN(api.identityCert, uintptr(identity))
 			if cert == 0 {
 				continue
@@ -187,20 +206,20 @@ func keychainIdentities(api *trustFuncs) []platform.ClientCertificate {
 			c := platform.ClientCertificate{Native: uintptr(identity)}
 			if data, _, _ := purego.SyscallN(api.data, cert); data != 0 {
 				c.DER = goBytes(id(data))
-				release(id(data))
+				cfRelease(data)
 			}
 			var name uintptr
 			if status, _, _ := purego.SyscallN(api.commonName, cert, uintptr(unsafe.Pointer(&name))); int32(status) == 0 && name != 0 {
 				c.Subject = goString(id(name))
-				release(id(name))
+				cfRelease(name)
 			}
-			release(id(cert))
+			cfRelease(cert)
 			if c.DER != nil {
 				certs = append(certs, c)
 			}
 		}
 	})
-	return certs
+	return certs, array
 }
 
 // serverTrust checks the server's certificate while the app handles

@@ -180,27 +180,32 @@ func (w *window) clientCertificateRequested(_, args uintptr) {
 		return
 	}
 	req := platform.ClientCertificateRequest{Host: host, Port: int(port), IsProxy: isProxy != 0}
+	var offered []uintptr
+	defer func() {
+		for _, c := range offered {
+			release(c)
+		}
+	}()
 	for i := uint32(0); i < count; i++ {
 		var cert uintptr
 		if failed(comCall(certs, certsGetValueAtIndex, uintptr(i), uintptr(unsafe.Pointer(&cert)))) || cert == 0 {
 			continue
 		}
+		offered = append(offered, cert)
 		if c, ok := clientCertificate(cert); ok {
 			req.Certificates = append(req.Certificates, c)
 		}
 	}
 	switch resp := w.h.ClientCertificateRequested(req); {
 	case resp.Default:
-	case resp.Cancel:
-		comCall(args, clientCertPutCancel, 1)
-	default:
-		if resp.Certificate == nil || resp.Certificate.Native == 0 {
-			// No certificate: the server gets none.
-			comCall(args, clientCertPutHandled, 1)
-			return
-		}
+		// WebView2's own certificate dialog.
+	case resp.Certificate != nil && resp.Certificate.Native != 0:
 		comCall(args, clientCertPutSelectedCertificate, resp.Certificate.Native)
 		comCall(args, clientCertPutHandled, 1)
+	default:
+		// No certificate: the challenge is refused, as the server's
+		// refusal of one is.
+		comCall(args, clientCertPutCancel, 1)
 	}
 }
 
