@@ -5,6 +5,8 @@ import (
 	"bytes"
 	"compress/gzip"
 	"encoding/json"
+	"image"
+	"image/png"
 	"io"
 	"os"
 	"os/exec"
@@ -186,6 +188,125 @@ func TestLinuxCommandJSON(t *testing.T) {
 	for _, command := range []string{`1`, `["my-app", 1]`} {
 		if _, err := load(command); err == nil || !strings.Contains(err.Error(), "linux.command") {
 			t.Errorf("linux.command %s: %v", command, err)
+		}
+	}
+}
+
+// linux.formats chooses the packages a build writes, all of them when it
+// is left out, and the archive with install.sh always.
+func TestLinuxFormats(t *testing.T) {
+	root := t.TempDir()
+	f, err := os.Create(filepath.Join(root, "icon.png"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = png.Encode(f, image.NewNRGBA(image.Rect(0, 0, 300, 300)))
+	f.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	const (
+		deb     = "note-pad_1.2.0_amd64.deb"
+		rpm     = "note-pad-1.2.0-1.x86_64.rpm"
+		archive = "note-pad-1.2.0-linux-amd64.tar.gz"
+	)
+	for _, tc := range []struct {
+		formats string // in mygo.json
+		want    []string
+	}{
+		{``, []string{deb, rpm, archive, "note-pad-256x256.png", "note-pad-512x512.png", pkgbuildName}},
+		{`, "formats": null`, []string{deb, rpm, archive, "note-pad-256x256.png", "note-pad-512x512.png", pkgbuildName}},
+		{`, "formats": ["deb"]`, []string{deb, archive}},
+		{`, "formats": ["pkgbuild", "rpm"]`, []string{rpm, archive, "note-pad-256x256.png", "note-pad-512x512.png", pkgbuildName}},
+		{`, "formats": []`, []string{archive}},
+	} {
+		// A Debian package with neither an RPM nor an Arch Linux package
+		// known for it: only the packages written warn about it.
+		config := `{"name": "Note Pad", "version": "1.2.0", "icon": "icon.png", "linux": {"depends": ["libunknown-thing0"]` + tc.formats + `}}`
+		if err := os.WriteFile(filepath.Join(root, jsonConfig), []byte(config), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		c, err := loadConfig(root)
+		if err != nil {
+			t.Fatalf("%s: %v", config, err)
+		}
+		stage := t.TempDir()
+		if os.WriteFile(filepath.Join(stage, "note-pad"), []byte("app"), 0o755) != nil {
+			t.Fatal("cannot write the app")
+		}
+		if _, err := writeLinuxDesktop(c, stage, "note-pad"); err != nil {
+			t.Fatal(err)
+		}
+		installed, err := entryNames(stage)
+		if err != nil {
+			t.Fatal(err)
+		}
+		before, _ := entryNames(stage)
+		warnings := captureWarnings(t, func() {
+			var written []string
+			if written, err = writeLinuxPackages(c, stage, "linux-amd64", "amd64", installed); err != nil {
+				t.Fatalf("%s: %v", config, err)
+			}
+			var names []string
+			for _, w := range written {
+				names = append(names, filepath.Base(w))
+			}
+			if !slices.Equal(names, tc.want) {
+				t.Errorf("%s: wrote %q, want %q", config, names, tc.want)
+			}
+		})
+		// Nothing else is left in the stage, which the build moves into
+		// build/linux-amd64.
+		after, _ := entryNames(stage)
+		if extra := slices.DeleteFunc(after, func(n string) bool { return slices.Contains(before, n) || slices.Contains(tc.want, n) }); len(extra) > 0 {
+			t.Errorf("%s: also wrote %q", config, extra)
+		}
+		for format, warning := range map[string]string{"rpm": "RPM package's dependencies", "pkgbuild": "PKGBUILD's dependencies"} {
+			if got, want := strings.Contains(warnings, warning), c.Linux.builds(format); got != want {
+				t.Errorf("%s: warned about the %s dependencies %v, want %v:\n%s", config, format, got, want, warnings)
+			}
+		}
+	}
+}
+
+// captureWarnings returns what f writes to the console.
+func captureWarnings(t *testing.T, f func()) string {
+	var b bytes.Buffer
+	con.mu.Lock()
+	w := con.w
+	con.w = &b
+	con.mu.Unlock()
+	defer func() {
+		con.mu.Lock()
+		con.w = w
+		con.mu.Unlock()
+	}()
+	f()
+	return b.String()
+}
+
+// linux.formats names only the packages MyGo writes.
+func TestLinuxFormatsName(t *testing.T) {
+	for _, tc := range []struct {
+		formats []string
+		ok      bool
+	}{
+		{nil, true},
+		{[]string{}, true},
+		{[]string{"deb"}, true},
+		{[]string{"deb", "rpm", "pkgbuild"}, true},
+		{[]string{"appimage"}, false},
+		{[]string{"deb", "Deb"}, false},
+		{[]string{"arch"}, false},
+	} {
+		c := &Config{}
+		c.Linux.Formats = tc.formats
+		err := c.validate()
+		if (err == nil) != tc.ok {
+			t.Errorf("linux.formats %q: %v", tc.formats, err)
+		}
+		if err != nil && !strings.Contains(err.Error(), "deb, rpm, pkgbuild") {
+			t.Errorf("linux.formats %q: the error does not name the formats: %v", tc.formats, err)
 		}
 	}
 }

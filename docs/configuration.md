@@ -150,6 +150,7 @@ See [Windows](distribution.md#windows).
 | `depends` | | packages the app needs besides GTK and WebKitGTK, by package format (`deb`, `rpm` and `arch`), or as a list of Debian packages mapped to the Arch Linux and RPM packages MyGo knows |
 | `webview` | `true` | `false` for an app that shows no web page, as one of native UI: the Debian and RPM packages and the PKGBUILD depend on GTK alone, and install.sh and `mygo doctor` do not ask for WebKitGTK |
 | `command` | none | a command that runs the app, or a list of names, as `["my-app", "ma"]`, which adds a short one: `/usr/bin/<command>` from the Debian and RPM packages and the PKGBUILD, `~/.local/bin/<command>` from install.sh, for each |
+| `formats` | `["deb", "rpm", "pkgbuild"]` | the packages `mygo build` writes, of `deb`, `rpm` and `pkgbuild`; the archive with install.sh is always written, as install.sh updates the app from it and the PKGBUILD packages it, so `[]` writes it alone |
 
 See [Linux](distribution.md#linux).
 

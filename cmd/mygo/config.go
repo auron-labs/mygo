@@ -326,6 +326,11 @@ func (c *Config) validate() error {
 			return fmt.Errorf("linux.command names %q twice", cmd)
 		}
 	}
+	for _, f := range c.Linux.Formats {
+		if !slices.Contains(linuxFormats, f) {
+			return fmt.Errorf("linux.formats %q is not a Linux package format, which are %s", f, strings.Join(linuxFormats, ", "))
+		}
+	}
 	if c.Updates != nil {
 		if err := c.Updates.validate(); err != nil {
 			return err

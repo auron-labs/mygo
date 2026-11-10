@@ -46,6 +46,20 @@ type Linux struct {
 	// by the first it links. Empty means none, and the app opens from the
 	// applications menu.
 	Command commandNames `json:"command"`
+	// Formats lists the packages mygo build writes: "deb", "rpm" and
+	// "pkgbuild" (default all three). The archive with install.sh is
+	// always written, as install.sh updates the app from it and the
+	// PKGBUILD packages it; an empty list writes it alone.
+	Formats []string `json:"formats"`
+}
+
+// linuxFormats are the packages linux.formats chooses from.
+var linuxFormats = []string{"deb", "rpm", "pkgbuild"}
+
+// builds reports whether mygo build writes the package of format, which
+// linux.formats lists, or every one when it is left out.
+func (l *Linux) builds(format string) bool {
+	return l.Formats == nil || slices.Contains(l.Formats, format)
 }
 
 // commandNames are the names of linux.command, which takes one name, as
@@ -77,7 +91,7 @@ type linuxDepends struct {
 	Deb    []string `json:"deb"`
 	RPM    []string `json:"rpm"`
 	Arch   []string `json:"arch"`
-	legacy bool // true when unmarshaled from a JSON string array
+	legacy bool     // true when unmarshaled from a JSON string array
 }
 
 func (d *linuxDepends) UnmarshalJSON(b []byte) error {

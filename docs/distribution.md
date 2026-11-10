@@ -46,7 +46,7 @@ when cross-compiling, set `CC` to a suitable cross compiler.
 |---|---|
 | macOS | `My App.app`, signed, and `my-app-0.1.0-arm64.dmg` (`my-app-0.1.0.dmg` for `darwin/universal`), with [updates](updates.md) also `install.sh` |
 | Windows | `My App.exe`, the files of the app, and the installer `my-app-setup-0.1.0-amd64.exe`, with [updates](updates.md) also [`install.ps1`](#install-scripts-for-macos-and-windows) |
-| Linux | `my-app`, `my-app.desktop`, `my-app.png`, `my-app.xml` for the file types the app defines, the files of the app, their archive `my-app-0.1.0-linux-amd64.tar.gz` with [`install.sh`](#the-install-script), the Debian package `my-app_0.1.0_amd64.deb`, the RPM package `my-app-0.1.0-1.x86_64.rpm`, and a [`PKGBUILD`](#arch-linux) with the icons it installs, `my-app-256x256.png` and `my-app-512x512.png` |
+| Linux | `my-app`, `my-app.desktop`, `my-app.png`, `my-app.xml` for the file types the app defines, the files of the app, their archive `my-app-0.1.0-linux-amd64.tar.gz` with [`install.sh`](#the-install-script), and the packages of [`linux.formats`](#linux), by default all three: the Debian package `my-app_0.1.0_amd64.deb`, the RPM package `my-app-0.1.0-1.x86_64.rpm`, and a [`PKGBUILD`](#arch-linux) with the icons it installs, `my-app-256x256.png` and `my-app-512x512.png` |
 
 Other flags: `-debug` keeps development features such as the inspector,
 `-skip-dmg`, `-skip-notarize` and `-skip-installer` (the Windows
@@ -597,6 +597,21 @@ command, `/usr/bin/my-app` from the packages and `~/.local/bin/my-app` from
 which adds a short name; without it, neither adds a command, which leaves
 the name to a command-line tool of the same name, such as the app's own.
 
+`formats` chooses the packages a build writes, of `deb`, `rpm` and
+`pkgbuild`, all three by default; a name it does not know is an error.
+The archive with [`install.sh`](#the-install-script) is always written:
+`install.sh` installs and [updates](updates.md) the app from it, and the
+PKGBUILD packages it. `formats: ["deb"]` writes the Debian package and
+the archive, and `formats: []` the archive alone. `SHA256SUMS` and
+`-upload` take only what the build wrote, and the build warns only about
+the `depends` of the packages it writes.
+
+```ts
+export default defineConfig({
+  linux: { formats: ["deb", "rpm"] },
+});
+```
+
 The desktop entry names the window class of the app, `StartupWMClass`,
 as the executable of `command`: an X11 session groups the window with the
 entry and shows its icon in the taskbar, where Wayland matches the same
@@ -612,7 +627,8 @@ would be `yun-yin-le`.
 
 ### Arch Linux
 
-Next to the archive, every Linux build also gets a `PKGBUILD`, from which
+Next to the archive, every Linux build also gets a `PKGBUILD`, unless
+[`linux.formats`](#linux) leaves it out, from which
 `makepkg` packages the archive for Arch Linux, checked against its
 SHA-256, and installs it with pacman:
 

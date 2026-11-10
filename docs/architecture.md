@@ -5518,7 +5518,9 @@ renderer's (`gputest.Compare`).
   Debian dependencies through `archPackages` and `rpmPackages`, warning
   about those they lack, and `options` keeps the executable unstripped. Every
   value is quoted for the shell, and `-upload` leaves it out (`uploads`
-  takes only known kinds). Packages hold the same files as
+  takes only known kinds). `linux.formats` chooses which of the three
+  packages a build writes (`writeLinuxPackages`), all by default; the
+  archive is always written. Packages hold the same files as
   the update archive; apps installed by a package manager do not update
   themselves (`Updater.Enabled` checks that the app can write where it is
   installed). Every Linux build also gets `install.sh`
