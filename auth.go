@@ -175,6 +175,14 @@ func (h *windowHandler) ClientCertificateRequested(req platform.ClientCertificat
 	return resp
 }
 
+// HandlesClientCertificates tells whether the app answers client
+// certificate challenges at all.
+func (h *windowHandler) HandlesClientCertificates() bool {
+	h.w.mu.Lock()
+	defer h.w.mu.Unlock()
+	return h.w.clientCertHandler != nil
+}
+
 // CertificateError is passed to the certificate error handler of a
 // window (SetCertificateErrorHandler): a server's certificate that does
 // not verify.

@@ -163,6 +163,9 @@ func (w *window) basicAuthenticationRequested(_, args uintptr) {
 // its certificate dialog. The certificates the collection holds are
 // alive until it is released, which is after the app has answered.
 func (w *window) clientCertificateRequested(_, args uintptr) {
+	if !w.h.HandlesClientCertificates() {
+		return // WebView2's own certificate dialog
+	}
 	var p uintptr
 	comCall(args, clientCertGetHost, uintptr(unsafe.Pointer(&p)))
 	host := takeWstr(p)

@@ -137,7 +137,9 @@ func (w *window) authChallenge(challenge id, handler uintptr) {
 // its own to leave it to.
 func (w *window) clientCertificate(space id, handler uintptr) {
 	api := trustAPI()
-	if api == nil {
+	if api == nil || !w.h.HandlesClientCertificates() {
+		// Without a handler the challenge is the web view's, and the
+		// keychain is not asked about: it would ask the user.
 		callBlock(handler, authDefault, 0)
 		return
 	}
