@@ -145,8 +145,10 @@ func (w *window) clientCertificate(space id, handler uintptr) {
 	}
 	certs, identities := keychainIdentities(api)
 	// The array owns the identities, which an answer uses: it lives as
-	// long as they do.
-	defer cfRelease(uintptr(identities))
+	// long as they do. The keychain may hold none.
+	if identities != 0 {
+		defer cfRelease(uintptr(identities))
+	}
 	resp := w.h.ClientCertificateRequested(platform.ClientCertificateRequest{
 		Host:         goString(send(space, "host")),
 		Port:         sendInt(space, "port"),
