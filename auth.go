@@ -134,7 +134,8 @@ type ClientCertificateResponse struct {
 //   - macOS: WebKit's handling, which never asks. MyGo answers
 //     WKNavigationDelegate's
 //     webView:didReceiveAuthenticationChallenge:completionHandler: with
-//     the identities of the keychain the server accepts.
+//     the identities of the keychain, which the keychain asks the user
+//     for; the server's acceptable issuers are the app's to filter by.
 //   - Linux: WebKitGTK's certificate chooser. MyGo answers
 //     WebKitWebView::authenticate; WebKitGTK lists no certificates, so
 //     with a handler set fn can only cancel — an empty answer refuses —
