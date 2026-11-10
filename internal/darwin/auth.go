@@ -175,13 +175,24 @@ func (w *window) clientCertificate(space id, handler uintptr) {
 // handshake needs.
 func identityCertificates(api *trustFuncs, identity uintptr) id {
 	chain := send(class("NSMutableArray"), "array")
-	cert, _, _ := purego.SyscallN(api.identityCert, identity)
+	cert := identityCertificate(api, identity)
 	if cert == 0 {
 		return chain
 	}
 	defer cfRelease(cert)
 	send(chain, "addObject:", cert)
 	return chain
+}
+
+// identityCertificate returns the certificate of an identity, which the
+// caller releases, or 0. SecIdentityCopyCertificate returns an OSStatus
+// and writes the certificate to its second argument.
+func identityCertificate(api *trustFuncs, identity uintptr) uintptr {
+	var cert uintptr
+	if status, _, _ := purego.SyscallN(api.identityCert, identity, uintptr(unsafe.Pointer(&cert))); int32(status) != 0 {
+		return 0
+	}
+	return cert
 }
 
 // keychainIdentities lists the identities of the keychain, their
@@ -203,7 +214,7 @@ func keychainIdentities(api *trustFuncs) ([]platform.ClientCertificate, id) {
 		array = id(result)
 		for i, n := 0, sendInt(array, "count"); i < n; i++ {
 			identity := send(array, "objectAtIndex:", uintptr(i))
-			cert, _, _ := purego.SyscallN(api.identityCert, uintptr(identity))
+			cert := identityCertificate(api, uintptr(identity))
 			if cert == 0 {
 				continue
 			}
@@ -211,6 +222,11 @@ func keychainIdentities(api *trustFuncs) ([]platform.ClientCertificate, id) {
 			if data, _, _ := purego.SyscallN(api.data, cert); data != 0 {
 				c.DER = goBytes(id(data))
 				cfRelease(data)
+			}
+			// Security has no public call for the issuer or the validity
+			// on macOS: they are read from the certificate itself.
+			if issuer, from, to, ok := platform.CertificateIssuer(c.DER); ok {
+				c.Issuer, c.ValidFrom, c.ValidTo = issuer, from, to
 			}
 			var name uintptr
 			if status, _, _ := purego.SyscallN(api.commonName, cert, uintptr(unsafe.Pointer(&name))); int32(status) == 0 && name != 0 {
