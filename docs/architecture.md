@@ -2001,7 +2001,9 @@ as in Tauri:
   answer is `Default`, the web view's own handling. Linux lists no
   certificates to offer (WebKitGTK has none), so a handler there can
   only refuse, and a refusal ends the load as a cancellation, which
-  `OnDidFailLoad` does not report.
+  `OnDidFailLoad` does not report. macOS lists the keychain's identities
+  only while `HandlesClientCertificates` is true, for the keychain asks
+  the user for them.
 - Active windows (`active.go`): a window is drawn as active, the one the
   user's input goes to, while it or a flyout of it (through flyouts'
   parents) has the keyboard (`windows.focused`), always while
