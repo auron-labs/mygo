@@ -392,4 +392,13 @@ export const showcase: ShowcaseApp[] = [
     mode: "native",
     image: "/showcase/xylring.jpg",
   },
+  {
+    name: "Mojian 墨间",
+    description:
+      "A quiet, native plain-text editor for ordinary folders on macOS, Linux and Windows. Tabs hold split editors, image and PDF viewers and persistent terminals, with built-in Git diffs and remote projects over SSH; MyGo's native UI is the whole app, in one Go binary.",
+    url: "https://mojian.ox0pine.cn",
+    author: "ox0pine",
+    mode: "native",
+    image: "/showcase/mojian.jpg",
+  },
 ]
