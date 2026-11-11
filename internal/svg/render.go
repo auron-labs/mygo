@@ -18,6 +18,10 @@ type renderer struct {
 	flat, dashed, outline polys
 	stroker               stroker
 	free                  []*layer
+	// fonts draws the text of the document being drawn, and boxes are
+	// where it lays out a text element's runs.
+	fonts Fonts
+	boxes []textBox
 }
 
 // layer is a canvas: rows of 4×w bytes, with what was drawn into it
@@ -72,6 +76,10 @@ func (r *renderer) node(n *node, ctm matrix, dst *layer, alpha float64) {
 }
 
 func (r *renderer) content(n *node, m matrix, dst *layer, alpha float64) {
+	if n.text != nil {
+		r.text(n.text, m, dst, alpha)
+		return
+	}
 	s := n.shape
 	if s == nil {
 		for _, k := range n.kids {

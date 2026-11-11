@@ -536,3 +536,38 @@ func (s *System) Unkeep(keys []uint64) {
 		}
 	}
 }
+
+// GlyphBitmap rasterizes a glyph of f for drawing on the CPU, as the text
+// of SVG documents is drawn, and keeps it nowhere: at scale pixels per
+// DIP, its origin dx pixels right of the left edge of a pixel (0 ≤ dx <
+// 1), unshaded, or with stroke > 0 the stroke of its outline stroke
+// pixels wide (StrokeGlyph). It returns w×h bytes of coverage, color
+// glyphs' alpha, placed left and top pixels from the glyph's origin.
+func (s *System) GlyphBitmap(f *Font, id uint32, scale, dx, stroke float32) (left, top, w, h int, pix []byte) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if f == nil {
+		return
+	}
+	b := s.engine().glyph(f, id, scale, dx, f.shadeFor(Flat), false)
+	if b.w <= 0 || b.h <= 0 || b.w > 2048 || b.h > 2048 {
+		return
+	}
+	if stroke > 0 {
+		b = strokeBitmap(b, min(stroke, 128)/2)
+		return b.left, b.top, b.w, b.h, b.pix
+	}
+	// A copy: engines may draw the next glyph into the same memory.
+	cov := make([]byte, b.w*b.h)
+	for i := range cov {
+		switch {
+		case b.color:
+			cov[i] = b.pix[4*i+3]
+		case b.subpixel:
+			cov[i] = max(b.pix[4*i], b.pix[4*i+1], b.pix[4*i+2])
+		default:
+			cov[i] = b.pix[i]
+		}
+	}
+	return b.left, b.top, b.w, b.h, cov
+}
