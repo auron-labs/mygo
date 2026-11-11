@@ -1675,6 +1675,63 @@ func TestCommandClickLinks(t *testing.T) {
 	}
 }
 
+// TestCommandClickWrappedLink: a URL or a hyperlink that soft-wraps onto
+// the next rows is one link, which Command-hover underlines on each row and
+// Command+click opens whole from any of them; a row that ends with a newline
+// ends the link.
+func TestCommandClickWrappedLink(t *testing.T) {
+	loadLib(t)
+	var opened []string
+	term, err := New(Options{Conn: newPipe(), OpenLink: func(link string) bool {
+		opened = append(opened, link)
+		return true
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer term.Close()
+	tt := ui.NewTester(func(c *ui.Context) { View(c, term).Fill().AutoFocus() }, 400, 200)
+	tt.Frame()
+	cols := term.v.cols
+	url := "https://example.com/" + strings.Repeat("a", cols)
+	hyper := "https://example.org/x"
+	// The URL from column 4, over two rows; then one cut by a newline;
+	// then a hyperlink wrapping from the end of a row onto the next.
+	cut := "https://cut.example/" + strings.Repeat("b", cols-len("https://cut.example/")-4)
+	term.Feed([]byte("see " + url + "\r\n" + strings.Repeat(" ", 4) + cut + "\r\nmore\r\n" +
+		strings.Repeat(" ", cols-3) + "\x1b]8;;" + hyper + "\x1b\\abcdef\x1b]8;;\x1b\\"))
+	tt.Frame()
+	end := 4 + len(url) - cols // the URL's end on its second row
+	x, y := cellCenter(term, 1, 1)
+	tt.Move(x, y)
+	tt.HoldModifiers(ui.Cmd)
+	if h := term.v.hover; h != (linkSpan{0, 4, end, 1}) {
+		t.Errorf("hovered %+v on the second row, want the URL over both rows", h)
+	}
+	if link, _, at := term.HoveredLink(); link != url || !at.Contains(cellCenter(term, 0, 0)) || !at.Contains(x, y) {
+		t.Errorf("HoveredLink is %q, %+v, want the URL around both rows", link, at)
+	}
+	tt.HoldModifiers(0)
+	for _, c := range [][2]int{{10, 0}, {1, 1}} {
+		x, y := cellCenter(term, c[0], c[1])
+		tt.ClickAtWith(ui.Cmd, x, y)
+	}
+	// The row after the URL's starts a link of its own: the newline cuts it.
+	x, y = cellCenter(term, 6, 2)
+	tt.ClickAtWith(ui.Cmd, x, y)
+	x, y = cellCenter(term, 1, 5)
+	tt.ClickAtWith(ui.Cmd, x, y)
+	if want := []string{url, url, cut, hyper}; !slices.Equal(opened, want) {
+		t.Errorf("opened %q, want %q", opened, want)
+	}
+	x, y = cellCenter(term, cols-1, 4)
+	tt.Move(x, y)
+	tt.HoldModifiers(ui.Cmd)
+	if h := term.v.hover; h != (linkSpan{4, cols - 3, 3, 5}) {
+		t.Errorf("hovered %+v, want the hyperlink over both rows", h)
+	}
+}
+
 // Command-hover underlines the same cells that Command-click opens,
 // including bare filenames and paths to ignored output directories.
 func TestCommandHoverFilePath(t *testing.T) {
@@ -1693,7 +1750,7 @@ func TestCommandHoverFilePath(t *testing.T) {
 			tt.Move(x, y)
 			plain := slices.Clone(tt.Image().Pix)
 			tt.HoldModifiers(ui.Cmd)
-			if h := term.v.hover; h != (linkSpan{0, 6, 6 + len(path)}) {
+			if h := term.v.hover; h != (linkSpan{0, 6, 6 + len(path), 0}) {
 				t.Fatalf("hovered %+v, want the file path's cells", h)
 			}
 			if tt.Cursor() != ui.CursorPointer {
@@ -1736,7 +1793,7 @@ func TestCommandClickLinkWithoutOpenLink(t *testing.T) {
 		t.Errorf("the cursor is %v over a link with Command", c)
 	}
 	// The link under it shows underlined, all its cells.
-	if h := term.v.hover; h != (linkSpan{0, 0, 4}) {
+	if h := term.v.hover; h != (linkSpan{0, 0, 4, 0}) {
 		t.Errorf("hovered %+v, want the hyperlink's cells 0..4", h)
 	}
 	x0, y0 := cellCenter(term, 0, 0)
