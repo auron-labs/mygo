@@ -22,6 +22,8 @@ type renderer struct {
 	// where it lays out a text element's runs.
 	fonts Fonts
 	boxes []textBox
+	// ext is that of the document being drawn.
+	ext *extras
 }
 
 // layer is a canvas: rows of 4×w bytes, with what was drawn into it
@@ -77,7 +79,8 @@ func (r *renderer) node(n *node, ctm matrix, dst *layer, alpha float64) {
 
 func (r *renderer) content(n *node, m matrix, dst *layer, alpha float64) {
 	if n.text != nil {
-		r.text(n.text, m, dst, alpha)
+		// Only Parse, which sets ext, compiles text.
+		r.ext.drawText(r, n.text, m, dst, alpha)
 		return
 	}
 	s := n.shape

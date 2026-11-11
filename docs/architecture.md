@@ -4968,6 +4968,11 @@ either.
   rotation or a skew is sampled from upright glyphs. Markers compile to
   nodes at the vertices of their path. What the cascade and the compiler
   leave out, they report (`svg.Doc.Unsupported`, `SVG.Unsupported`).
+  Text, markers and style sheets are linked only into apps that call
+  `svg.Parse` (through `ui.ParseSVG`): ui's own icons, which every app
+  with native UI parses, go through `svg.ParseBasic` (`parseIcon`),
+  which reads presentation and style attributes alone, and a `Doc`
+  carries the functions that compile and draw its text and markers.
   An atlas logs the rectangles that change, so renderers upload only those.
   DirectWrite methods taking floats are called through purego, which sets
   the floating point registers that `syscall` leaves alone on ARM64.

@@ -447,6 +447,36 @@ func TestIcons(t *testing.T) {
 	}
 }
 
+// TestParseBasic draws icons as Parse does, and leaves out text, markers
+// and style sheets.
+func TestParseBasic(t *testing.T) {
+	basic := func(src string) *image.RGBA {
+		t.Helper()
+		d, err := ParseBasic([]byte(src))
+		if err != nil {
+			t.Fatalf("ParseBasic: %v", err)
+		}
+		img := image.NewRGBA(image.Rect(0, 0, 24, 24))
+		d.Draw(img, Options{Current: red, Fonts: boxFonts{}})
+		return img
+	}
+	for _, src := range []string{
+		checkIcon,
+		`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>`,
+		`<svg viewBox="0 0 24 24"><g transform="rotate(20 12 12)" opacity=".5" style="fill: currentColor; stroke: blue"><rect x="4" y="4" width="16" height="16" rx="3"/></g></svg>`,
+		`<svg viewBox="0 0 24 24"><linearGradient id="g"><stop offset="0" stop-color="red"/><stop offset="1" stop-color="blue"/></linearGradient><clipPath id="c"><circle cx="12" cy="12" r="10"/></clipPath><rect width="24" height="24" fill="url(#g)" clip-path="url(#c)"/></svg>`,
+	} {
+		want := draw(t, src, 24, 24)
+		if got := basic(src); !slices.Equal(got.Pix, want.Pix) {
+			t.Errorf("ParseBasic draws differently from Parse:\n%s", src)
+		}
+	}
+	empty := basic(`<svg viewBox="0 0 24 24"><style>rect{fill:red}</style><rect width="24" height="24" fill="none"/><text y="20" font-size="20">a</text><marker id="m" viewBox="0 0 2 2"><rect width="2" height="2"/></marker><path d="M2 2H22" fill="none" marker-end="url(#m)"/></svg>`)
+	if alphaSum(empty) != 0 {
+		t.Errorf("ParseBasic drew text, a marker or a style sheet's rule: %v pixels", alphaSum(empty))
+	}
+}
+
 func FuzzParse(f *testing.F) {
 	for _, s := range []string{
 		`<svg viewBox="0 0 10 10"><path d="M1 1a5 5 0 1 0 8 8z" stroke="red" stroke-dasharray="1 2"/></svg>`,
@@ -463,6 +493,10 @@ func FuzzParse(f *testing.F) {
 		d, err := Parse(data)
 		if err != nil {
 			return
+		}
+		d.Draw(image.NewRGBA(image.Rect(0, 0, 16, 16)), Options{Current: red, Fonts: boxFonts{}})
+		if d, err = ParseBasic(data); err != nil {
+			t.Fatalf("ParseBasic fails where Parse does not: %v", err)
 		}
 		d.Draw(image.NewRGBA(image.Rect(0, 0, 16, 16)), Options{Current: red, Fonts: boxFonts{}})
 	})

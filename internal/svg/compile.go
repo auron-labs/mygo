@@ -117,13 +117,15 @@ type compiler struct {
 	// context-fill and context-stroke paint with.
 	ctx *shape
 	rep *report
+	// ext compiles text and markers, which are left out without it.
+	ext *extras
 }
 
-func newCompiler(root *elem, rep *report) *compiler {
+func newCompiler(root *elem, rep *report, ext *extras) *compiler {
 	c := &compiler{
 		root: root, ids: map[string]*elem{}, styles: map[*elem]*style{},
 		grads: map[*elem]*gradient{}, clips: map[*elem]*clipDef{}, masks: map[*elem]*maskDef{},
-		budget: 1 << 17, base: initialStyle(), rep: rep,
+		budget: 1 << 17, base: initialStyle(), rep: rep, ext: ext,
 	}
 	walk(root, func(e *elem) {
 		if id := e.attrs["id"]; id != "" {
@@ -291,8 +293,11 @@ func (c *compiler) elem(e *elem, parent *style) *node {
 			return nil
 		}
 	case "text":
+		if c.ext == nil {
+			return nil
+		}
 		// Its runs may be visible where it is not.
-		if n.text = c.text(e, &st); n.text == nil {
+		if n.text = c.ext.text(c, e, &st); n.text == nil {
 			return nil
 		}
 	default:
@@ -309,7 +314,10 @@ func (c *compiler) elem(e *elem, parent *style) *node {
 			width: st.strokeWidth, miter: st.miterLimit, cap: st.cap, join: st.join,
 			dashes: st.dashes, dashOffset: st.dashOffset, strokeFirst: st.strokeFirst,
 		}
-		if ms := c.markers(e, &pa, &st, n.shape); len(ms) > 0 {
+		if c.ext == nil {
+			break
+		}
+		if ms := c.ext.markers(c, e, &pa, &st, n.shape); len(ms) > 0 {
 			// The shape, then its markers over it.
 			body := &node{m: identity, shape: n.shape}
 			c.finish(body, &c.base)

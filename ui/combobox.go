@@ -489,7 +489,7 @@ func coreSearchField(c *context, query *string) *node {
 
 // searchIcon is a magnifying glass, MingCute's search icon (Apache License
 // 2.0, https://github.com/Richard9394/MingCute/blob/main/LICENSE).
-var searchIcon = MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="2" d="M14.5 14.5L20 20m-4-10a6 6 0 1 1-12 0a6 6 0 0 1 12 0Z"/></svg>`))
+var searchIcon = parseIcon([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="2" d="M14.5 14.5L20 20m-4-10a6 6 0 1 1-12 0a6 6 0 0 1 12 0Z"/></svg>`))
 
 // magnifier shows the magnifying glass of a field for searching, in the
 // muted color of the theme's text, no higher than a line of the field's

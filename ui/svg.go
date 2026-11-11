@@ -40,6 +40,9 @@ type SVG struct {
 	// scheme is the color scheme the SVG is drawn in: schemeTheme's,
 	// light or dark.
 	scheme uint8
+	// fonts draws its text. ParseSVG sets it, and parseIcon does not, so
+	// that an app showing MyGo's own icons alone does not link it.
+	fonts func(*text.System) svg.Fonts
 }
 
 // Color schemes of SVGs.
@@ -58,7 +61,19 @@ func ParseSVG(data []byte) (*SVG, error) {
 		return nil, err
 	}
 	w, h := d.Size()
-	return &SVG{doc: d, id: lastSVG.Add(1), w: float32(w), h: float32(h)}, nil
+	return &SVG{doc: d, id: lastSVG.Add(1), w: float32(w), h: float32(h), fonts: newSVGFonts}, nil
+}
+
+// parseIcon parses an icon of MyGo's own, which has no text, markers or
+// style elements, without linking what draws those into every app (see
+// svg.ParseBasic).
+func parseIcon(data []byte) *SVG {
+	d, err := svg.ParseBasic(data)
+	if err != nil {
+		panic("ui: " + err.Error())
+	}
+	w, h := d.Size()
+	return &SVG{doc: d, id: lastSVG.Add(1), w: float32(w), h: float32(h)}
 }
 
 // MustParseSVG is ParseSVG for SVGs that are part of the program, such as
@@ -174,12 +189,18 @@ func (s *SVG) darkIn(themeDark bool) bool {
 // options returns how to draw the SVG, with current for currentColor,
 // in the dark color scheme if dark, with the text of sys.
 func (s *SVG) options(current color.NRGBA, dark bool, sys *text.System) svg.Options {
-	return svg.Options{Current: current, Dark: dark, Fonts: svgFonts{sys}}
+	o := svg.Options{Current: current, Dark: dark}
+	if s.fonts != nil {
+		o.Fonts = s.fonts(sys)
+	}
+	return o
 }
 
 // svgFonts lays out and rasterizes the text of SVGs with the system's
 // text stack, as elements' text, each line on the CPU.
 type svgFonts struct{ sys *text.System }
+
+func newSVGFonts(sys *text.System) svg.Fonts { return svgFonts{sys} }
 
 // line shapes a line of text, uncached: Draw may run on any goroutine,
 // and pictures are drawn again rarely.

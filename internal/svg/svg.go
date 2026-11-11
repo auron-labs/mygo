@@ -9,13 +9,15 @@
 // joined by descendant and child combinators, with custom properties and
 // prefers-color-scheme media queries. Embedded images, patterns and
 // filters are not drawn: Unsupported lists what a document has that is
-// not.
+// not. ParseBasic leaves out text, markers and style sheets, so that a
+// program whose SVGs are its own simple icons does not link them.
 package svg
 
 import (
 	"image"
 	"image/color"
 	"slices"
+	"strings"
 	"sync"
 )
 
@@ -34,6 +36,17 @@ type Doc struct {
 	// current is true when something is painted with currentColor.
 	current     bool
 	unsupported []string
+	// ext draws its text, for a document Parse parsed.
+	ext *extras
+}
+
+// extras are what Parse does that ParseBasic does not. A program links
+// them only when it calls Parse: each app with native UI parses icons
+// with ParseBasic, and most never draw text or markers from an SVG.
+type extras struct {
+	text     func(c *compiler, e *elem, st *style) *textNode
+	drawText func(r *renderer, t *textNode, m matrix, dst *layer, alpha float64)
+	markers  func(c *compiler, e *elem, pa *path, st *style, sh *shape) []*node
 }
 
 // Options are how Draw draws a document.
@@ -58,18 +71,50 @@ func Parse(data []byte) (*Doc, error) {
 	if err != nil {
 		return nil, err
 	}
+	ext := &extras{text: (*compiler).text, drawText: (*renderer).text, markers: (*compiler).markers}
 	rep := &report{}
 	sh := parseSheets(root, rep)
 	cascade(root, sh, false, rep)
-	d := newCompiler(root, rep).doc()
+	d := newCompiler(root, rep, ext).doc()
 	if sh.scheme {
 		cascade(root, sh, true, rep)
-		dark := newCompiler(root, rep).doc()
+		dark := newCompiler(root, rep, ext).doc()
 		d.dark, d.current = dark.root, d.current || dark.current
 		if d.dark == nil {
 			d.dark = &node{m: identity} // nothing to draw
 		}
 	}
+	reportElems(root, rep)
+	slices.Sort(rep.items)
+	d.unsupported, d.ext = rep.items, ext
+	return d, nil
+}
+
+// ParseBasic parses an SVG document as Parse does, but for its text,
+// markers and style elements, which it leaves out (Unsupported does not
+// list them), and the var() functions of its style attributes, which it
+// treats as errors. It is for icons that are part of the program: those
+// do without, and a program that never calls Parse links none of them.
+func ParseBasic(data []byte) (*Doc, error) {
+	root, err := parseXML(data)
+	if err != nil {
+		return nil, err
+	}
+	rep := &report{}
+	walk(root, func(e *elem) {
+		if e.name == "#text" {
+			return
+		}
+		for name, v := range e.attrs {
+			if properties[name] {
+				e.props = append(e.props, decl{name, strings.TrimSpace(v)})
+			}
+		}
+		if s, ok := e.attrs["style"]; ok {
+			e.props = append(e.props, parseDecls(s, rep)...)
+		}
+	})
+	d := newCompiler(root, rep, nil).doc()
 	reportElems(root, rep)
 	slices.Sort(rep.items)
 	d.unsupported = rep.items
@@ -129,8 +174,8 @@ func (d *Doc) draw(dst *image.RGBA, o *Options, m matrix) {
 	}
 	current := o.Current
 	r.current = rgba{float64(current.R) / 255, float64(current.G) / 255, float64(current.B) / 255, float64(current.A) / 255}
-	r.fonts = o.Fonts
-	defer func() { r.fonts = nil }()
+	r.fonts, r.ext = o.Fonts, d.ext
+	defer func() { r.fonts, r.ext = nil, nil }()
 	l := r.layer()
 	defer r.release(l)
 	r.node(root, m, l, 1)
