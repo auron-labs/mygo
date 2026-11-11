@@ -365,4 +365,13 @@ export const showcase: ShowcaseApp[] = [
     mode: "native",
     image: "/showcase/openbee.jpg",
   },
+  {
+    name: "Ferry Drive",
+    description:
+      "An open-source desktop client for Baidu Netdisk and Quark Drive on Apple Silicon Macs and Windows 10 or 11 (x64). Browse files, manage uploads and downloads, and open shared links.",
+    url: "https://github.com/yjcdon/ferry-drive",
+    author: "yjcdon",
+    mode: "native",
+    image: "/showcase/ferry-drive.png",
+  },
 ]
