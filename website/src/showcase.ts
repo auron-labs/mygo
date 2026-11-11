@@ -374,4 +374,22 @@ export const showcase: ShowcaseApp[] = [
     mode: "native",
     image: "/showcase/ferry-drive.png",
   },
+  {
+    name: "Snapover",
+    description:
+      "An open-source clipboard manager for macOS and Windows. Sync text, images, files and folders between computers over a direct, encrypted connection.",
+    url: "https://github.com/2fa0/snapover",
+    author: "2fa0",
+    mode: "native",
+    image: "/showcase/snapover.jpg",
+  },
+  {
+    name: "Xylring",
+    description:
+      "An open-source native Git client for macOS and Windows. Browse commit graphs, review diffs, search history and stage individual hunks.",
+    url: "https://github.com/2fa0/xylring",
+    author: "2fa0",
+    mode: "native",
+    image: "/showcase/xylring.jpg",
+  },
 ]
