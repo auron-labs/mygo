@@ -38,7 +38,9 @@ func testDocs(t *testing.T, opts DocumentsOptions[string]) *Documents[string] {
 	if opts.Write == nil {
 		opts.Write = func(w io.Writer, s string) error { _, err := io.WriteString(w, s); return err }
 	}
-	opts.Window = func(doc *Document[string]) *Window { return NewWindow(WindowOptions{}) }
+	if opts.Window == nil {
+		opts.Window = func(doc *Document[string]) *Window { return NewWindow(WindowOptions{}) }
+	}
 	ds := NewDocuments(opts)
 	t.Cleanup(func() {
 		for _, d := range ds.Documents() {
@@ -714,6 +716,141 @@ func TestDocumentService(t *testing.T) {
 	})
 	if r := call(t, fw, 3, note+".State"); r["v"].(map[string]any)["path"] != path {
 		t.Errorf("state: %v", r)
+	}
+}
+
+// sharedWindowDocs makes documents that all open in one window.
+func sharedWindowDocs(t *testing.T, autosave Autosave) *Documents[string] {
+	t.Helper()
+	var shared *Window
+	return testDocs(t, DocumentsOptions[string]{Autosave: autosave, Window: func(*Document[string]) *Window {
+		if shared == nil || shared.IsDestroyed() {
+			shared = NewWindow(WindowOptions{})
+		}
+		return shared
+	}})
+}
+
+// windowTitle is what the title of the window of a document named name is.
+func windowTitle(name string) string {
+	if runtime.GOOS == "darwin" {
+		return name
+	}
+	return name + " - MyGoTest"
+}
+
+func TestDocumentsShareAWindow(t *testing.T) {
+	ds := sharedWindowDocs(t, AutosaveOff)
+	a, _ := ds.Open(writeTemp(t, "a.txt", "a"))
+	var selected []string
+	a.OnSelect(func() { selected = append(selected, "a") })
+	b, _ := ds.Open(writeTemp(t, "b.txt", "b"))
+	w := a.Window()
+	if b.Window() != w || ds.ForWindow(w) != b {
+		t.Fatal("the second document did not open in the first one's window, selected")
+	}
+	waitFor(t, "the second document's title", func() bool { return w.Title() == windowTitle("b.txt") })
+
+	// A document behind another leaves the window its name and state.
+	a.Set("edited behind")
+	time.Sleep(20 * time.Millisecond)
+	if w.Title() != windowTitle("b.txt") || w.IsDocumentEdited() {
+		t.Errorf("the hidden document changed the window: %q edited=%v", w.Title(), w.IsDocumentEdited())
+	}
+
+	a.Select()
+	if ds.ForWindow(w) != a || w.Title() != windowTitle("a.txt") || !w.IsDocumentEdited() || !slices.Equal(selected, []string{"a"}) {
+		t.Fatalf("selecting: %v %q edited=%v, selected %q", ds.ForWindow(w) == a, w.Title(), w.IsDocumentEdited(), selected)
+	}
+	// The File menu acts on the selected document.
+	documentRole(RoleSave, w)
+	waitFor(t, "Save", func() bool { return fileIs(a.Path(), "edited behind") })
+
+	// Opening one open already selects it.
+	if again, _ := ds.Open(b.Path()); again != b || ds.ForWindow(w) != b {
+		t.Error("opening the document again did not select it")
+	}
+}
+
+func TestDocumentClosesAlone(t *testing.T) {
+	ds := sharedWindowDocs(t, AutosaveOff)
+	a, _ := ds.Open(writeTemp(t, "a.txt", "a"))
+	b, _ := ds.Open(writeTemp(t, "b.txt", "b"))
+	c, _ := ds.Open(writeTemp(t, "c.txt", "c"))
+	w := a.Window()
+	closed := 0
+	b.OnClosed(func() { closed++ })
+	b.Select()
+
+	b.Set("unsaved")
+	asked := answer("Cancel")
+	b.Close()
+	waitFor(t, "the question", func() bool { return len(asked.all()) == 1 })
+	time.Sleep(20 * time.Millisecond)
+	if b.Window() != w || closed != 0 {
+		t.Fatal("Cancel closed the document")
+	}
+
+	answer("Save")
+	b.Close()
+	waitFor(t, "the document to close", func() bool { return b.Window() == nil })
+	if w.IsDestroyed() || closed != 1 || !fileIs(b.Path(), "unsaved") {
+		t.Fatalf("destroyed=%v closed=%d", w.IsDestroyed(), closed)
+	}
+	// The window shows the one after it.
+	if ds.ForWindow(w) != c || len(ds.Documents()) != 2 {
+		t.Errorf("selected %v, %d documents", ds.ForWindow(w), len(ds.Documents()))
+	}
+	// The last one closes the window.
+	a.Close()
+	waitFor(t, "a to close", func() bool { return a.Window() == nil })
+	if ds.ForWindow(w) != c || w.IsDestroyed() {
+		t.Fatal("closing a closed the window")
+	}
+	c.Close()
+	waitFor(t, "the window to close", func() bool { return w.IsDestroyed() && c.Window() == nil })
+}
+
+func TestDocumentWindowClosesAll(t *testing.T) {
+	ds := sharedWindowDocs(t, AutosaveOff)
+	a, _ := ds.Open(writeTemp(t, "a.txt", "a"))
+	b, _ := ds.Open(writeTemp(t, "b.txt", "b"))
+	w := a.Window()
+	closed := 0
+	for _, d := range []*Document[string]{a, b} {
+		d.OnClosed(func() { closed++ })
+	}
+	a.Set("a2")
+	b.Set("b2")
+
+	// Canceling the second question keeps the window and both documents.
+	var answers []string
+	onMain(func() {
+		fb.OnMessageBox = func(o *platform.MessageBoxOptions) platform.MessageBoxResult {
+			answers = append(answers, o.Message)
+			label := "Save"
+			if len(answers) == 2 {
+				label = "Cancel"
+			}
+			return platform.MessageBoxResult{Response: slices.Index(o.Buttons, label)}
+		}
+	})
+	w.Close()
+	waitFor(t, "both questions", func() bool { return len(onMainValue(func() []string { return answers })) == 2 })
+	time.Sleep(20 * time.Millisecond)
+	if w.IsDestroyed() || closed != 0 || len(ds.Documents()) != 2 || !fileIs(a.Path(), "a2") {
+		t.Fatalf("after Cancel: destroyed=%v closed=%d", w.IsDestroyed(), closed)
+	}
+	// It asks about b with b shown.
+	if ds.ForWindow(w) != b {
+		t.Error("the document asked about was not selected")
+	}
+
+	answer("Save")
+	w.Close()
+	waitFor(t, "the window to close", func() bool { return w.IsDestroyed() })
+	if closed != 2 || len(ds.Documents()) != 0 || !fileIs(b.Path(), "b2") {
+		t.Errorf("closed=%d, %d documents", closed, len(ds.Documents()))
 	}
 }
 
