@@ -143,6 +143,41 @@ Windows of any app can show the same, with `Window.SetRepresentedFile` and
 `Window.SetDocumentEdited`. `Window.Title` returns the title without the
 `*`.
 
+### Several documents in a window
+
+An app that shows its documents as tabs of one window, as an IDE does,
+returns from `Window` the window of documents open already. The window
+then shows them one at a time: the one opened last, until `Select`
+selects another. It shows the name and edited state of the one it shows,
+and the File menu, `ForWindow` and the document service act on that one.
+
+```go
+var projectWindow *mygo.Window
+
+Window: func(doc *mygo.Document[string]) *mygo.Window {
+	if projectWindow == nil || projectWindow.IsDestroyed() {
+		projectWindow = mygo.NewWindow(mygo.WindowOptions{Content: ui.View(app.view)})
+	}
+	doc.OnSelect(projectWindow.Invalidate) // the view shows docs.ForWindow(projectWindow)
+	doc.OnClosed(projectWindow.Invalidate)
+	return projectWindow
+},
+```
+
+| | |
+|---|---|
+| `Select()` | makes the document the one its window shows |
+| `OnSelect(fn)` | is called when it becomes the one its window shows: when it opens, when `Select` selects it, and when MyGo brings it forward, as `Open` does with a document open already and a quit with one it asks about |
+| `OnClosed(fn)` | is called once it closed, alone or with its window |
+
+`Close` closes a document alone, asking about it first where it must, and
+the window shows the one after it, or else the one before. The last
+document closes the window. Closing the window asks about its edited
+documents one after the other, each shown as it is asked about; Cancel
+keeps the window open with all of them. `RoleClose` closes the window: an
+app whose windows show several documents gives a menu item of its own
+that closes the one shown.
+
 ## Saving
 
 | | |
@@ -154,7 +189,7 @@ Windows of any app can show the same, with `Window.SetRepresentedFile` and
 | `Rename(name)` | renames its file, in its folder; `""` asks |
 | `MoveTo(dir)` | moves its file to another folder; `""` asks |
 | `Revert()` | reads its file again, dropping its unsaved changes |
-| `Close()` | closes its window, which asks to save first where it must |
+| `Close()` | closes it, asking to save first where it must: alone, in a window that [shows others](#several-documents-in-a-window), else with its window |
 
 Files are written as `NSDocument` and GIO write them: into a new file next
 to the document, flushed to the disk, which then replaces it, so that a
