@@ -78,6 +78,13 @@ type DocumentsOptions[T any] struct {
 	// Window creates the window that shows a document, on the main
 	// thread. MyGo sets its title, represented file and edited state,
 	// asks to save before it closes, and closes the document with it.
+	//
+	// It may instead return the window of documents open already
+	// (Document.Window), which then shows several, one at a time, as
+	// tabs do: the one it opened last, until Document.Select selects
+	// another. The window takes the name and edited state of the one it
+	// shows, and the File menu acts on it. Document.Close closes one of
+	// them alone, and closing the window closes them all.
 	Window func(doc *Document[T]) *Window
 
 	// Autosave is how documents save their changes: AutosaveInPlace
@@ -214,7 +221,8 @@ func (ds *Documents[T]) Documents() []*Document[T] {
 	return docs
 }
 
-// ForWindow returns the document w shows, or nil.
+// ForWindow returns the document w shows, or nil. Of a window that shows
+// several, it is the selected one.
 func (ds *Documents[T]) ForWindow(w *Window) *Document[T] {
 	if b := documentFor(w); b != nil && b.kind == ds.kind {
 		return b.ops.(*Document[T])
@@ -450,6 +458,8 @@ type docBase struct {
 
 	onState  listeners[func(DocumentState)]
 	onReload listeners[func()]
+	onSelect listeners[func()]
+	onClosed listeners[func()]
 }
 
 // Path returns the document's file, "" while it is untitled.
@@ -506,6 +516,17 @@ func (b *docBase) OnStateChange(fn func(DocumentState)) (off func()) {
 // that keep a copy of the content take it again.
 func (b *docBase) OnReload(fn func()) (off func()) { return b.onReload.add(fn, false) }
 
+// OnSelect is called on the main thread when the document becomes the one
+// its window shows: when it opens, when Select selects it, and when MyGo
+// brings it forward, as Documents.Open does with a document open already
+// and a quit does with one it asks about. A window that shows several
+// documents shows its view of this one then.
+func (b *docBase) OnSelect(fn func()) (off func()) { return b.onSelect.add(fn, false) }
+
+// OnClosed is called on the main thread once the document closed: with
+// its window, or alone (Close, of a document whose window shows others).
+func (b *docBase) OnClosed(fn func()) (off func()) { return b.onClosed.add(fn, false) }
+
 // changed follows an edit of the content: edited is the new edited state.
 func (b *docBase) changed(edited bool) { b.changedAt(edited, 0, 0) }
 
@@ -553,16 +574,27 @@ func (b *docBase) notify() {
 			b.mu.Lock()
 			w := b.window
 			b.mu.Unlock()
-			if w != nil && !w.IsDestroyed() {
-				w.SetDocumentEdited(s.Edited)
-				w.SetRepresentedFile(s.Path)
-				w.SetTitle(documentTitle(s.Name))
-				emitDocumentState(w, s)
+			// A document its window shows behind another leaves the
+			// window's name and edited state to that one.
+			if w != nil && documentFor(w) == b {
+				showDocumentState(w, s)
 			}
 			fire1(&b.onState, s)
 			refreshDocumentMenus()
 		})
 	})
+}
+
+// showDocumentState gives w the name and edited state of s, the document
+// it shows. Main thread only.
+func showDocumentState(w *Window, s DocumentState) {
+	if w.IsDestroyed() {
+		return
+	}
+	w.SetDocumentEdited(s.Edited)
+	w.SetRepresentedFile(s.Path)
+	w.SetTitle(documentTitle(s.Name))
+	emitDocumentState(w, s)
 }
 
 // documentTitle is the title of a document's window: its name, then the
@@ -623,16 +655,28 @@ func (b *docBase) MoveTo(dir string) error { return b.moveTo(dir) }
 // File > Duplicate does.
 func (d *Document[T]) Duplicate() *Document[T] { return d.duplicate().ops.(*Document[T]) }
 
-// Close closes the document's window, which asks to save the document
-// first when it must.
+// Close closes the document, asking to save it first when it must. A
+// document whose window shows others closes alone; else its window closes
+// with it.
 func (b *docBase) Close() {
-	b.mu.Lock()
-	w := b.window
-	b.mu.Unlock()
-	if w != nil {
-		w.Close()
-	}
+	onMain(func() {
+		b.mu.Lock()
+		w := b.window
+		b.mu.Unlock()
+		switch {
+		case w == nil:
+		case len(windowDocuments(w)) > 1:
+			b.closeAlone()
+		default:
+			w.close()
+		}
+	})
 }
+
+// Select makes the document the one its window shows, of a window that
+// shows several (DocumentsOptions.Window): the window takes its name and
+// edited state, and the File menu acts on it.
+func (b *docBase) Select() { onMain(b.selectNow) }
 
 // IsReadOnly reports whether the document's file can't be written.
 func (b *docBase) IsReadOnly() bool {

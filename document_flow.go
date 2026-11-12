@@ -24,8 +24,8 @@ import (
 
 var docRegistry struct {
 	sync.Mutex
-	kinds    []*docKind
-	byWindow map[*Window]*docBase
+	kinds   []*docKind
+	windows map[*Window]*docWindow
 	// launched tells that the app delivered the files it started with;
 	// pending are those it was asked to open before.
 	launched bool
@@ -172,6 +172,18 @@ func openDocument(path string) *docBase {
 	return nil
 }
 
+// docWindow is a window that shows documents: one, or several it shows
+// one at a time (DocumentsOptions.Window).
+type docWindow struct {
+	// docs are the documents in the order they opened in the window;
+	// selected is the one it shows.
+	docs     []*docBase
+	selected *docBase
+	// closing tells that the window waits for its edited documents to be
+	// saved or answered for before it closes. Main thread only.
+	closing bool
+}
+
 // documentFor returns the document w shows.
 func documentFor(w *Window) *docBase {
 	if w == nil {
@@ -179,32 +191,63 @@ func documentFor(w *Window) *docBase {
 	}
 	docRegistry.Lock()
 	defer docRegistry.Unlock()
-	return docRegistry.byWindow[w]
+	if dw := docRegistry.windows[w]; dw != nil {
+		return dw.selected
+	}
+	return nil
 }
 
-// attach makes w the window of b. Main thread only.
+// windowDocuments returns the documents w shows, in the order they opened
+// in it.
+func windowDocuments(w *Window) []*docBase {
+	docRegistry.Lock()
+	defer docRegistry.Unlock()
+	if dw := docRegistry.windows[w]; dw != nil {
+		return slices.Clone(dw.docs)
+	}
+	return nil
+}
+
+// attach makes w the window of b, which it shows from now on. The first
+// document of a window ties the window's closing to the documents. Main
+// thread only.
 func (b *docBase) attach(w *Window) {
 	b.mu.Lock()
 	b.window = w
 	b.mu.Unlock()
 	docRegistry.Lock()
-	if docRegistry.byWindow == nil {
-		docRegistry.byWindow = map[*Window]*docBase{}
+	if docRegistry.windows == nil {
+		docRegistry.windows = map[*Window]*docWindow{}
 	}
-	docRegistry.byWindow[w] = b
+	dw := docRegistry.windows[w]
+	first := dw == nil
+	if first {
+		dw = &docWindow{}
+		docRegistry.windows[w] = dw
+	}
+	dw.docs = append(dw.docs, b)
+	dw.selected = b
 	docRegistry.Unlock()
-	w.OnClose(b.windowClosing)
-	w.OnClosed(b.windowClosed)
+	fire(&b.onSelect)
+	if !first {
+		return
+	}
+	w.OnClose(windowClosing)
+	w.OnClosed(func() { windowClosed(w) })
 	w.OnFocus(func() {
-		go b.checkDisk()
+		for _, d := range windowDocuments(w) {
+			go d.checkDisk()
+		}
 		refreshDocumentMenus()
 	})
 	w.OnBlur(func() {
-		b.mu.Lock()
-		now := b.edited && b.autosavesLocked()
-		b.mu.Unlock()
-		if now {
-			go b.persist()
+		for _, d := range windowDocuments(w) {
+			d.mu.Lock()
+			now := d.edited && d.autosavesLocked()
+			d.mu.Unlock()
+			if now {
+				go d.persist()
+			}
 		}
 		refreshDocumentMenus()
 	})
@@ -214,58 +257,167 @@ func (b *docBase) attach(w *Window) {
 	}
 }
 
-// focus brings b's window to the front.
+// selectNow makes b the document its window shows. Main thread only.
+func (b *docBase) selectNow() {
+	b.mu.Lock()
+	w := b.window
+	b.mu.Unlock()
+	docRegistry.Lock()
+	dw := docRegistry.windows[w]
+	changed := dw != nil && dw.selected != b && slices.Contains(dw.docs, b)
+	if changed {
+		dw.selected = b
+	}
+	docRegistry.Unlock()
+	if !changed {
+		return
+	}
+	showDocumentState(w, b.State())
+	refreshDocumentMenus()
+	fire(&b.onSelect)
+}
+
+// focus brings b's window to the front, showing b.
 func (b *docBase) focus() {
 	b.mu.Lock()
 	w := b.window
 	b.mu.Unlock()
 	if w != nil {
+		b.Select()
 		w.Show()
 		w.Focus()
 	}
 }
 
-// windowClosing decides whether b's window may close, on the main
-// thread: an unedited document closes, an edited one is saved in place
-// or asks first, which keeps the window open until it is answered.
-func (b *docBase) windowClosing(e *CloseEvent) {
-	if b.closing {
+// settle saves b in place before it closes, or else asks what to do with
+// its changes, showing it first, and reports whether it may close.
+func (b *docBase) settle() bool {
+	b.mu.Lock()
+	autosaves, path := b.autosavesLocked(), b.path
+	b.mu.Unlock()
+	if autosaves {
+		if _, err := b.write(path, writeAutosave); err == nil {
+			return true
+		}
+	}
+	b.Select()
+	return b.askToSave()
+}
+
+// windowClosing decides whether a window of documents may close, on the
+// main thread: it closes when its documents are unedited; edited ones are
+// saved in place or asked about one after the other, which keeps the
+// window open until they are answered. A canceled question keeps the
+// window open with all its documents.
+func windowClosing(e *CloseEvent) {
+	w := e.Window
+	docRegistry.Lock()
+	dw := docRegistry.windows[w]
+	docRegistry.Unlock()
+	if dw == nil {
+		return
+	}
+	docs := windowDocuments(w)
+	if dw.closing || slices.ContainsFunc(docs, func(b *docBase) bool { return b.closing }) {
 		e.PreventDefault()
 		return
 	}
 	if e.DefaultPrevented() || App.quitting {
 		return // the quit took care of the documents
 	}
-	b.mu.Lock()
-	edited, autosaves, path := b.edited, b.autosavesLocked(), b.path
-	b.mu.Unlock()
-	if !edited {
+	edited := slices.DeleteFunc(docs, func(b *docBase) bool { return !b.IsEdited() })
+	if len(edited) == 0 {
 		return
 	}
 	e.PreventDefault()
-	b.closing = true
+	dw.closing = true
 	go func() {
-		ok := false
-		if autosaves {
-			_, err := b.write(path, writeAutosave)
-			ok = err == nil
-		}
-		if !ok {
-			ok = b.askToSave()
+		ok := true
+		for _, b := range edited {
+			if ok = b.settle(); !ok {
+				break
+			}
 		}
 		onMain(func() {
-			b.closing = false
-			if w := e.Window; ok && w.native != nil {
+			dw.closing = false
+			if ok && w.native != nil {
 				w.destroy()
 			}
 		})
 	}()
 }
 
-// windowClosed closes b with its window. Main thread only.
-func (b *docBase) windowClosed() {
+// closeAlone closes b, whose window shows other documents too, once it
+// is saved or its changes are answered for; the window stays open. Main
+// thread only.
+func (b *docBase) closeAlone() {
 	b.mu.Lock()
 	w := b.window
+	b.mu.Unlock()
+	docRegistry.Lock()
+	dw := docRegistry.windows[w]
+	docRegistry.Unlock()
+	if b.closing || dw == nil || dw.closing {
+		return
+	}
+	if !b.IsEdited() {
+		b.leaveWindow(dw)
+		return
+	}
+	b.closing = true
+	go func() {
+		ok := b.settle()
+		onMain(func() {
+			b.closing = false
+			if ok {
+				b.leaveWindow(dw)
+			}
+		})
+	}()
+}
+
+// leaveWindow closes b, which leaves its window dw to its other
+// documents; dw shows the one after b, or else the one before, when it
+// showed b. Main thread only.
+func (b *docBase) leaveWindow(dw *docWindow) {
+	docRegistry.Lock()
+	i := slices.Index(dw.docs, b)
+	if i < 0 {
+		docRegistry.Unlock()
+		return
+	}
+	dw.docs = slices.Delete(dw.docs, i, i+1)
+	var next *docBase
+	if dw.selected == b {
+		dw.selected = nil
+		if len(dw.docs) > 0 {
+			next = dw.docs[min(i, len(dw.docs)-1)]
+		}
+	}
+	docRegistry.Unlock()
+	b.windowClosed()
+	if next != nil {
+		next.selectNow()
+	}
+}
+
+// windowClosed closes the documents of w, which closed. Main thread only.
+func windowClosed(w *Window) {
+	docRegistry.Lock()
+	dw := docRegistry.windows[w]
+	delete(docRegistry.windows, w)
+	docRegistry.Unlock()
+	if dw == nil {
+		return
+	}
+	for _, b := range dw.docs {
+		b.windowClosed()
+	}
+}
+
+// windowClosed closes b, with its window or alone. Main thread only.
+func (b *docBase) windowClosed() {
+	b.mu.Lock()
 	b.closed = true
 	b.window = nil
 	keep := b.edited && !b.discarded
@@ -273,9 +425,6 @@ func (b *docBase) windowClosed() {
 		b.timer.Stop()
 	}
 	b.mu.Unlock()
-	docRegistry.Lock()
-	delete(docRegistry.byWindow, w)
-	docRegistry.Unlock()
 	k := b.kind
 	k.mu.Lock()
 	if i := slices.Index(k.docs, b); i >= 0 {
@@ -291,6 +440,7 @@ func (b *docBase) windowClosed() {
 		docWork.Go(func() { k.recovery.remove(b) })
 	}
 	refreshDocumentMenus()
+	fire(&b.onClosed)
 }
 
 // discard drops the unsaved changes of b, which is closing.
