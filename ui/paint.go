@@ -108,6 +108,7 @@ func (rt *engine) paint(root *node, w, h, scale float32) {
 	rt.under, rt.holes = p.under[:0], p.holes[:0] // kept for the next frame's
 	rt.partsBase = sceneData(s)
 	rt.atlases = atlasGenerations(s)
+	s.Generations = rt.atlases
 	// Layers of paths drawn on the CPU (pathSpill) outside the parts are
 	// reused as the parts are painted again, as masks of the transient
 	// room are.

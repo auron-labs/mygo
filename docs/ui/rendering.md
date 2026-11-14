@@ -20,6 +20,15 @@ pointer, since it redraws, and has the compositor take, only that. Set
 and on Linux `MYGO_GPU=1` to draw with OpenGL even where it runs on the
 CPU.
 
+On Windows, set `MYGO_ATLAS_LOG=1` to log, for each frame drawn on the
+GPU, the generations of the glyph atlases the frame was painted with and
+those uploaded with it. A line ending in "repacked since painted" is a frame
+whose text draws from the wrong places in the atlas:
+
+```
+mygo: atlases: renderer 0xc000123400, 2160x1350 at scale 1.5, painted with generations [3 5], uploading [3 6]: repacked since painted
+```
+
 Set `MYGO_FRAME_STATS=1` to log each frame that takes longer than 8 ms, or
 `MYGO_FRAME_STATS=4` for another threshold in milliseconds (`all` logs
 every frame). Each line tells how long building the frame (and in how many

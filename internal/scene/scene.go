@@ -377,6 +377,9 @@ type Scene struct {
 	// which renderers draw before it, whether it shows them or not, while
 	// the atlases their glyphs point at hold them.
 	Canvases []*Image
+	// Generations are those of MaskAtlas and ColorAtlas when the frame was
+	// painted: its glyphs point into the atlases as they were then.
+	Generations [2]uint64
 	// Drawn, unless zero, is the part of a canvas's frame its content
 	// takes, from the top left corner, as an effect's layer made larger
 	// than its content: backdrops end at its edge (BackdropOf), as at the
