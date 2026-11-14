@@ -555,6 +555,41 @@ func TestParserReviewBracketMathNeverCloses(t *testing.T) {
 	}
 }
 
+// A closed math block's End includes its closing delimiter line rather
+// than stopping at its last content segment.
+func TestParserReviewMathBlockEnd(t *testing.T) {
+	for _, c := range []struct {
+		name      string
+		src       string
+		wantStart int
+		wantEnd   int
+		wantOpen  bool
+	}{
+		{"dollar multiline", "$$\nx\n$$\n", 0, len("$$\nx\n$$"), false},
+		{"dollar multiline with trailing para", "$$\nx\ny\n$$\n\nafter\n", 0, len("$$\nx\ny\n$$"), false},
+		{"dollar closing line content", "$$\nx $$\n", 0, len("$$\nx $$"), false},
+		{"dollar single line", "$$ x $$\n", 0, len("$$ x $$"), false},
+		{"bracket multiline", "\\[\nx\n\\]\n", 0, len("\\[\nx\n\\]"), false},
+		{"bracket multiline with trailing para", "\\[\nx\ny \\]\n\nafter\n", 0, len("\\[\nx\ny \\]"), false},
+		{"bracket single line", "\\[ x \\]\n", 0, len("\\[ x \\]"), false},
+		{"dollar unclosed", "$$\nx\n", 0, len("$$\nx"), true},
+	} {
+		d := Parse(c.src)
+		if d.Len() < 2 {
+			t.Fatalf("%s: expected at least 2 blocks, got %d", c.name, d.Len())
+		}
+		b := d.Block(1)
+		if b.Kind != MathBlock {
+			t.Fatalf("%s: block 1 kind = %v, want MathBlock", c.name, b.Kind)
+		}
+		if b.Start != c.wantStart || b.End != c.wantEnd || b.Open != c.wantOpen {
+			t.Errorf("%s: got Start=%d End=%d Open=%v (%q), want Start=%d End=%d Open=%v (%q)",
+				c.name, b.Start, b.End, b.Open, c.src[b.Start:b.End],
+				c.wantStart, c.wantEnd, c.wantOpen, c.src[c.wantStart:c.wantEnd])
+		}
+	}
+}
+
 func TestParserReviewRandomSetStates(t *testing.T) {
 	zzFuzzOnly(t)
 	r := rand.New(rand.NewPCG(31+zzSeed(), 32))

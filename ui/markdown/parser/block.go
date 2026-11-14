@@ -649,6 +649,7 @@ func (p *blockParser) finalize(i int) int {
 	b.parse.open = false
 	b.Next = len(d.blocks)
 	switch {
+	case b.Kind == MathBlock && b.parse.mathDone:
 	case b.segB > b.segA:
 		b.End = int(d.segs[b.segB-1].end)
 	case b.parse.lastChild >= 0:
