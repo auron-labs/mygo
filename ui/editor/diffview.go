@@ -276,6 +276,15 @@ func (d *DiffState) Stats() (added, deleted int) {
 	return d.model.stats()
 }
 
+// Comparing reports whether the texts are being compared off the main
+// thread, as large texts a window shows are: until they are, the viewer
+// shows them without changes, and Hunks and Stats have none. The window
+// draws again when the comparison is done.
+func (d *DiffState) Comparing() bool {
+	d.ensure()
+	return d.model.comparing()
+}
+
 // Revert puts the old lines of hunk i back in New.
 func (d *DiffState) Revert(i int) {
 	d.ensure()
@@ -571,6 +580,13 @@ func (d *DiffState) sideOptions(old bool) options {
 
 // DiffView builds the diff viewer.
 func DiffView(c *ui.Context, d *DiffState) ui.Element {
+	if d.New == nil {
+		d.New = NewBuffer("")
+	}
+	// The window showing the buffers from the first frame, for which
+	// large texts are compared off the main thread, the window drawing
+	// again when they are (diffModel.full).
+	d.New.watch(c.Services())
 	d.ensure()
 	d.endMark = "  " + l10n.In(c.Locale()).NoNewlineAtEnd()
 	// The new side's editor scrolls as it is built, as to a caret

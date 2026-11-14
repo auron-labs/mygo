@@ -4,6 +4,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync/atomic"
 
 	"github.com/egoist/mygo/internal/diff"
 	"github.com/egoist/mygo/internal/rope"
@@ -29,6 +30,19 @@ type diffModel struct {
 	// final newline is no line. An edited diff compares lines without
 	// them, as typing after the final newline adds that line.
 	eol bool
+	// job compares the whole texts off the main thread, nil when none
+	// does: until it is done there are no hunks, and the texts are the
+	// buffers' as they are now.
+	job *diffJob
+}
+
+// diffJob is a comparison of the whole texts on a goroutine of its own:
+// its texts, of the versions it compares, and when done the hunks.
+type diffJob struct {
+	oldText, newText rope.Text
+	oldVer, newVer   uint64
+	hunks            []diff.Hunk
+	done             atomic.Bool // hunks are set
 }
 
 // diffPad is how many unchanged lines around an edit are compared
@@ -39,19 +53,38 @@ const diffPad = 3
 // before comparing the whole texts.
 const diffMaxRegion = 20000
 
+// diffSyncLines and diffSyncBytes are the most lines and bytes of the two
+// texts together compared on the main thread; larger texts shown in a
+// window are compared on a goroutine (full). Two texts of 5,000 lines
+// of 100 bytes take 1 to 7 ms to compare on one core, whether all, half
+// or 2% of their lines change: under half a frame, which keeps most
+// source files without a frame shown before their changes. 700,000 lines
+// take seconds. Few long lines cost by their bytes, which are split and
+// hashed.
+const (
+	diffSyncLines = 10000
+	diffSyncBytes = 1 << 20
+)
+
 func (d *diffModel) set(old, new *Buffer, eol bool) {
 	if d.old != old || d.new != new || d.eol != eol {
 		d.old, d.new, d.eol = old, new, eol
 		d.oldVer, d.newVer = ^uint64(0), ^uint64(0)
+		// The comparison of other texts, which goes on, is dropped.
+		d.job = nil
 	}
 }
+
+// comparing reports whether the texts are being compared off the main
+// thread, there being no hunks until they are.
+func (d *diffModel) comparing() bool { return d.job != nil }
 
 // update compares the texts again where they changed, and reports
 // whether the hunks changed.
 func (d *diffModel) update() bool {
 	if d.old == nil || d.new == nil {
 		changed := d.hunks != nil
-		d.hunks = nil
+		d.hunks, d.job = nil, nil
 		if changed {
 			d.version++
 			d.words = nil
@@ -60,10 +93,32 @@ func (d *diffModel) update() bool {
 	}
 	oldText, oldVer := d.old.snapshot()
 	newText, newVer := d.new.snapshot()
+	took := false
+	if j := d.job; j != nil && d.old != d.new {
+		if j.oldVer != oldVer {
+			// The old text changed since: compare it anew.
+			d.full(oldText, newText, oldVer, newVer)
+			return true
+		}
+		if !j.done.Load() {
+			// The texts show as they are, without changes, until then.
+			d.oldText, d.newText = oldText, newText
+			return false
+		}
+		// The hunks of the versions compared, which the edits of the new
+		// text since move and compare again around them, as any edit.
+		d.job = nil
+		d.oldText, d.newText, d.oldVer, d.newVer = j.oldText, j.newText, j.oldVer, j.newVer
+		d.hunks = j.hunks
+		d.version++
+		d.words = nil
+		took = true
+	}
 	if oldVer == d.oldVer && newVer == d.newVer && d.old != d.new {
-		return false
+		return took
 	}
 	if d.old == d.new {
+		d.job = nil
 		changed := d.hunks != nil
 		d.hunks, d.oldVer, d.newVer = nil, oldVer, newVer
 		d.oldText, d.newText = oldText, newText
@@ -130,18 +185,49 @@ func (d *diffModel) update() bool {
 	}
 	d.newText, d.newVer = newText, newVer
 	if dirtyFrom < 0 {
-		return false
+		return took
 	}
 	d.redo(dirtyFrom, dirtyTo, touched)
 	return true
 }
 
-// full compares the whole texts.
+// full compares the whole texts: on the main thread when they are small,
+// or while no window shows the buffers, as for an app's Hunks with no
+// view; otherwise on a goroutine, whose hunks update takes once done,
+// which draws the windows showing the buffers again. Until then there
+// are no hunks, and its result is dropped if the old text changes, or
+// set is given other buffers, before.
 func (d *diffModel) full(oldText, newText rope.Text, oldVer, newVer uint64) {
 	d.oldText, d.newText, d.oldVer, d.newVer = oldText, newText, oldVer, newVer
-	d.hunks = diff.Lines(d.lines(oldText, 0, oldText.LineCount()), d.lines(newText, 0, newText.LineCount()))
 	d.version++
 	d.words = nil
+	d.job = nil
+	small := oldText.LineCount()+newText.LineCount() <= diffSyncLines && oldText.Len()+newText.Len() <= diffSyncBytes
+	if small || !d.old.watched() && !d.new.watched() {
+		d.hunks = d.compare(oldText, newText)
+		return
+	}
+	d.hunks = nil
+	j := &diffJob{oldText: oldText, newText: newText, oldVer: oldVer, newVer: newVer}
+	d.job = j
+	cmp := diffModel{eol: d.eol}
+	old, new := d.old, d.new
+	startDiff(func() {
+		j.hunks = cmp.compare(j.oldText, j.newText)
+		j.done.Store(true)
+		old.invalidate()
+		new.invalidate()
+	})
+}
+
+// startDiff runs a comparison off the main thread; tests run it when
+// they choose.
+var startDiff = func(job func()) { go job() }
+
+// compare returns the hunks between the whole texts, from any goroutine:
+// it reads only eol of d.
+func (d *diffModel) compare(oldText, newText rope.Text) []diff.Hunk {
+	return diff.Lines(d.lines(oldText, 0, oldText.LineCount()), d.lines(newText, 0, newText.LineCount()))
 }
 
 // ropeLines returns lines from to to of r: none of an empty text, which

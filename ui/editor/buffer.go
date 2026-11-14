@@ -759,6 +759,14 @@ func (b *Buffer) watch(s ui.Services) {
 	}
 }
 
+// watched reports whether a window showed the buffer, which invalidate
+// draws again.
+func (b *Buffer) watched() bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return len(b.wake) > 0
+}
+
 // invalidate draws the windows showing the buffer again, from any
 // goroutine.
 func (b *Buffer) invalidate() {

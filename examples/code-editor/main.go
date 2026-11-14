@@ -163,7 +163,7 @@ func (a *app) diffPage(c *ui.Context, f *file) {
 	default:
 		d.Inline = editor.DiffInlineWordAlt
 	}
-	if len(d.Hunks()) == 0 {
+	if len(d.Hunks()) == 0 && !d.Comparing() {
 		ui.Column(c).Grow(1).Center().Children(func() {
 			ui.Text(c, "No changes").FontSize(18).Bold()
 			ui.Text(c, "Edit "+f.name+" to see its changes here.").TextColor(c.Theme().TextMuted)

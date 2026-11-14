@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/egoist/mygo/internal/diff"
+	"github.com/egoist/mygo/internal/wait"
 	"github.com/egoist/mygo/ui"
 )
 
@@ -562,6 +563,7 @@ func TestDiffViewerFillerHatched(t *testing.T) {
 	nw.WriteString("z\n")
 	d := &DiffState{Old: NewBuffer("a\nz\n"), New: NewBuffer(nw.String()), Layout: DiffSplit}
 	tt := ui.NewTester(func(c *ui.Context) { DiffView(c, d).Fill() }, 900, 500)
+	waitCompared(t, tt, d)
 	tt.SetScale(2)
 	tt.Frame()
 	ed := &d.eds[0]
@@ -1424,5 +1426,166 @@ func TestDiffViewForgetsDeletedLines(t *testing.T) {
 	}
 	if n := len(ov.shaped.cur) + len(ov.shaped.prev); n > 600 {
 		t.Errorf("%d shaped rows of 2,000 deleted lines still kept", n)
+	}
+}
+
+// largeDiffTexts returns texts of n lines each, past what is compared on
+// the main thread, every 50th line changed.
+func largeDiffTexts(n int) (string, string) {
+	var a, b strings.Builder
+	for i := range n {
+		line := "\tvalue := compute(" + strconv.Itoa(i) + ")\n"
+		a.WriteString(line)
+		if i%50 == 7 {
+			line = "\tvalue := computeAgain(" + strconv.Itoa(i) + ")\n"
+		}
+		b.WriteString(line)
+	}
+	return a.String(), b.String()
+}
+
+// holdDiffs keeps the comparisons started off the main thread, for the
+// test to run when it chooses.
+func holdDiffs(t *testing.T) *[]func() {
+	var jobs []func()
+	prev := startDiff
+	startDiff = func(job func()) { jobs = append(jobs, job) }
+	t.Cleanup(func() { startDiff = prev })
+	return &jobs
+}
+
+// waitCompared waits for a comparison of d off the main thread to be
+// done and the window to draw it.
+func waitCompared(t *testing.T, tt *ui.Tester, d *DiffState) {
+	t.Helper()
+	for d.Comparing() {
+		wait.Until(t, "the window to draw again after the comparison", tt.FramePending)
+		tt.Frame()
+	}
+}
+
+// syncHunks returns the hunks of old and nw compared on the spot, as
+// with no window.
+func syncHunks(old, nw string, editable bool) []DiffHunk {
+	return (&DiffState{Old: NewBuffer(old), New: NewBuffer(nw), Editable: editable}).Hunks()
+}
+
+// A large diff is compared off the main thread: its first frame shows the
+// texts without changes, and the window draws again with them once the
+// comparison is done (#1812).
+func TestDiffLargeComparesOffMainThread(t *testing.T) {
+	jobs := holdDiffs(t)
+	old, nw := largeDiffTexts(diffSyncLines)
+	d := &DiffState{Old: NewBuffer(old), New: NewBuffer(nw)}
+	tt := ui.NewTester(func(c *ui.Context) { DiffView(c, d).Fill() }, 800, 600)
+	if len(*jobs) != 1 {
+		t.Fatalf("%d comparisons started off the main thread, want 1", len(*jobs))
+	}
+	if !d.Comparing() || len(d.Hunks()) != 0 {
+		t.Fatalf("comparing %v with %d hunks before the comparison ran, want true with none", d.Comparing(), len(d.Hunks()))
+	}
+	// Hidden: only the empty line after each final newline.
+	for i, s := range d.sides {
+		if h := s.hidden(); len(h) != 1 || h[0].from != diffSyncLines {
+			t.Fatalf("side %d hides %v while compared, want the texts whole", i, h)
+		}
+	}
+	go (*jobs)[0]()
+	wait.Until(t, "the window to draw again after the comparison", tt.FramePending)
+	tt.Frame()
+	if d.Comparing() {
+		t.Fatal("still comparing after the comparison was done")
+	}
+	if got, want := d.Hunks(), syncHunks(old, nw, false); !slices.Equal(got, want) || len(got) != diffSyncLines/50 {
+		t.Fatalf("hunks %v, want %v", got, want)
+	}
+	if len(d.sides[1].hidden()) < 2 {
+		t.Fatalf("hidden %v after the comparison, want unchanged lines collapsed", d.sides[1].hidden())
+	}
+	// Small texts are compared at once.
+	d.Old, d.New = NewBuffer("a\nb\n"), NewBuffer("a\nc\n")
+	tt.Frame()
+	if len(*jobs) != 1 || d.Comparing() || len(d.Hunks()) != 1 {
+		t.Fatalf("small texts: %d comparisons started, comparing %v, hunks %v", len(*jobs), d.Comparing(), d.Hunks())
+	}
+}
+
+// Large texts no window shows are compared at once, as for an app's
+// Hunks with no view.
+func TestDiffLargeWithoutWindow(t *testing.T) {
+	jobs := holdDiffs(t)
+	old, nw := largeDiffTexts(diffSyncLines)
+	d := &DiffState{Old: NewBuffer(old), New: NewBuffer(nw)}
+	if n := len(d.Hunks()); n != diffSyncLines/50 || d.Comparing() || len(*jobs) != 0 {
+		t.Fatalf("%d hunks, comparing %v, %d comparisons started", n, d.Comparing(), len(*jobs))
+	}
+}
+
+// Edits while a large diff is compared: of the new text, the result is
+// taken and the edits compared again around them; of the old text, the
+// result is dropped for a comparison of the old text as it is; of other
+// buffers, it is dropped.
+func TestDiffLargeEditedWhileComparing(t *testing.T) {
+	jobs := holdDiffs(t)
+	old, nw := largeDiffTexts(diffSyncLines)
+	d := &DiffState{Old: NewBuffer(old), New: NewBuffer(nw), Editable: true}
+	tt := ui.NewTester(func(c *ui.Context) { DiffView(c, d).Fill() }, 800, 600)
+	d.New.Edit(Edit{Start: 0, End: 0, Text: "added\n"})
+	tt.Frame()
+	d.New.Edit(Edit{Start: d.New.Len(), End: d.New.Len(), Text: "last\n"})
+	tt.Frame()
+	if len(*jobs) != 1 || !d.Comparing() {
+		t.Fatalf("%d comparisons started, comparing %v, want 1, true", len(*jobs), d.Comparing())
+	}
+	(*jobs)[0]()
+	tt.Frame()
+	if got, want := d.Hunks(), syncHunks(old, d.New.String(), true); d.Comparing() || !slices.Equal(got, want) {
+		t.Fatalf("after editing the new text: comparing %v, hunks %v, want %v", d.Comparing(), got, want)
+	}
+
+	// The old text edited: the comparison started before is stale.
+	d.Old.Edit(Edit{Start: 0, End: 0, Text: "x\n"}) // compared anew
+	tt.Frame()
+	d.Old.Edit(Edit{Start: 0, End: 0, Text: "y\n"}) // and anew
+	tt.Frame()
+	if len(*jobs) != 3 {
+		t.Fatalf("%d comparisons started, want 3", len(*jobs))
+	}
+	(*jobs)[1]()
+	tt.Frame()
+	if !d.Comparing() || len(d.Hunks()) != 0 {
+		t.Fatalf("a stale comparison was taken: comparing %v, hunks %v", d.Comparing(), d.Hunks())
+	}
+	(*jobs)[2]()
+	tt.Frame()
+	if got, want := d.Hunks(), syncHunks(d.Old.String(), d.New.String(), true); d.Comparing() || !slices.Equal(got, want) {
+		t.Fatalf("after editing the old text: comparing %v, hunks %v, want %v", d.Comparing(), got, want)
+	}
+
+	// Other buffers: the comparison of the ones before is dropped.
+	d.Old.Edit(Edit{Start: 0, End: 0, Text: "z\n"})
+	tt.Frame()
+	d.Old, d.New = NewBuffer("a\n"), NewBuffer("b\n")
+	tt.Frame()
+	(*jobs)[3]()
+	tt.Frame()
+	if got := d.Hunks(); len(got) != 1 || got[0] != (DiffHunk{0, 1, 0, 1}) {
+		t.Fatalf("hunks %v of other buffers, want one", got)
+	}
+}
+
+// Typing in a large editable diff while it is compared on a goroutine, a
+// test for the race detector: the result is of the texts as they are.
+func TestDiffLargeTypingWhileComparing(t *testing.T) {
+	old, nw := largeDiffTexts(diffSyncLines)
+	d := &DiffState{Old: NewBuffer(old), New: NewBuffer(nw), Editable: true}
+	tt := ui.NewTester(func(c *ui.Context) { DiffView(c, d).Fill() }, 800, 600)
+	for i := 0; i < 20 && d.Comparing(); i++ {
+		d.New.Edit(Edit{Start: 0, End: 0, Text: strconv.Itoa(i) + "\n"})
+		tt.Frame()
+	}
+	waitCompared(t, tt, d)
+	if got, want := d.Hunks(), syncHunks(old, d.New.String(), true); !slices.Equal(got, want) {
+		t.Fatalf("hunks %v, want %v", got, want)
 	}
 }

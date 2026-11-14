@@ -32,6 +32,14 @@ diffing again only the lines around it. `New` can be the buffer of an
 editor too, as a file's, so that the diff shows its changes as they are
 typed.
 
+Texts of more than 10,000 lines, or 1 MB, together are compared off the
+main thread once a window shows them, so that opening a large file never
+holds up the window: the viewer shows the texts without changes until the
+comparison is done, and the window draws again with them. Meanwhile
+`Comparing` reports it, and `Hunks` and `Stats` have none. Edits of `New`
+go on as usual, the diff catching up with them once it arrives; an edit of
+`Old` starts the comparison again.
+
 An empty text has no lines, as `git diff` counts them: the side of a file
 added or deleted, or emptied, shows no line numbers, and its gutter selects
 no line and offers no button. A text's lines end at its final newline, as
