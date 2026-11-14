@@ -43,12 +43,14 @@ func (*Backend) Power() platform.Power                                      { re
 func (*Backend) Network() platform.Network                                  { return network{} }
 func (*Backend) NowPlaying() platform.NowPlaying                            { return nowPlaying{} }
 func (*Backend) Secrets() platform.Secrets                                  { return secrets{} }
-func (*Backend) NewTray(platform.TrayHandler) (platform.Tray, error)        { return nil, errUnsupported }
-func (*Backend) RegisterHotkey(int, string, string) error                   { return errUnsupported }
-func (*Backend) UnregisterHotkey(int)                                       {}
-func (*Backend) NotificationsSupported() bool                               { return false }
-func (*Backend) WebViewAvailable() bool                                     { return false }
-func (*Backend) RemoveNotification(string)                                  {}
+func (*Backend) NewTray(string, platform.TrayHandler) (platform.Tray, error) {
+	return nil, errUnsupported
+}
+func (*Backend) RegisterHotkey(int, string, string) error { return errUnsupported }
+func (*Backend) UnregisterHotkey(int)                     {}
+func (*Backend) NotificationsSupported() bool             { return false }
+func (*Backend) WebViewAvailable() bool                   { return false }
+func (*Backend) RemoveNotification(string)                {}
 
 func (*Backend) ShowNotification(_ *platform.Notification, done func(error)) {
 	done(errUnsupported)

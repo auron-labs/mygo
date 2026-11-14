@@ -398,7 +398,7 @@ func (b *Backend) Applications() ([]platform.Application, error) {
 	return append([]platform.Application(nil), Apps...), nil
 }
 
-func (b *Backend) NewTray(h platform.TrayHandler) (platform.Tray, error) {
+func (b *Backend) NewTray(_ string, h platform.TrayHandler) (platform.Tray, error) {
 	t := &tray{b: b, h: h}
 	b.mu.Lock()
 	b.trays = append(b.trays, t)

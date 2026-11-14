@@ -202,22 +202,24 @@ func (b *Backend) removeWindow(w *window) {
 	}
 }
 
-func (*Backend) SetApplicationMenu(*platform.Menu)                   {}
-func (*Backend) UpdateMenuItem(*platform.MenuItem)                   {}
-func (b *Backend) App() platform.AppController                       { return app{} }
-func (b *Backend) Dialogs() platform.Dialogs                         { return dialogs{} }
-func (b *Backend) Clipboard() platform.Clipboard                     { return clipboard{b} }
-func (b *Backend) Shell() platform.Shell                             { return shell{} }
-func (b *Backend) Screen() platform.Screen                           { return screen{} }
-func (b *Backend) Theme() platform.Theme                             { return theme{b} }
-func (b *Backend) Power() platform.Power                             { return power{} }
-func (*Backend) NewTray(platform.TrayHandler) (platform.Tray, error) { return nil, errUnsupported }
-func (*Backend) RegisterHotkey(int, string, string) error            { return errUnsupported }
-func (*Backend) UnregisterHotkey(int)                                {}
-func (*Backend) NotificationsSupported() bool                        { return false }
-func (*Backend) WebViewAvailable() bool                              { return false }
-func (*Backend) RemoveNotification(string)                           {}
-func (*Backend) RemoveAllNotifications()                             {}
+func (*Backend) SetApplicationMenu(*platform.Menu) {}
+func (*Backend) UpdateMenuItem(*platform.MenuItem) {}
+func (b *Backend) App() platform.AppController     { return app{} }
+func (b *Backend) Dialogs() platform.Dialogs       { return dialogs{} }
+func (b *Backend) Clipboard() platform.Clipboard   { return clipboard{b} }
+func (b *Backend) Shell() platform.Shell           { return shell{} }
+func (b *Backend) Screen() platform.Screen         { return screen{} }
+func (b *Backend) Theme() platform.Theme           { return theme{b} }
+func (b *Backend) Power() platform.Power           { return power{} }
+func (*Backend) NewTray(string, platform.TrayHandler) (platform.Tray, error) {
+	return nil, errUnsupported
+}
+func (*Backend) RegisterHotkey(int, string, string) error { return errUnsupported }
+func (*Backend) UnregisterHotkey(int)                     {}
+func (*Backend) NotificationsSupported() bool             { return false }
+func (*Backend) WebViewAvailable() bool                   { return false }
+func (*Backend) RemoveNotification(string)                {}
+func (*Backend) RemoveAllNotifications()                  {}
 
 func (*Backend) ShowNotification(_ *platform.Notification, done func(error)) {
 	done(errUnsupported)

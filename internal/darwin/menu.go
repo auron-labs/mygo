@@ -426,7 +426,7 @@ func registerTrayTarget() {
 
 var trayTarget id
 
-func (b *Backend) NewTray(h platform.TrayHandler) (platform.Tray, error) {
+func (b *Backend) NewTray(_ string, h platform.TrayHandler) (platform.Tray, error) {
 	if trayTarget == 0 {
 		trayTarget = alloc("MyGoTrayTarget")
 	}

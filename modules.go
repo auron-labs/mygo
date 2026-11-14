@@ -877,8 +877,10 @@ type TrayOptions struct {
 	// items each keep their place. Empty, a new icon goes left of those
 	// already there. On Windows, which places icons itself, the icon keeps
 	// whether the user shows it on the taskbar or in its overflow, as the
-	// app makes it again or makes its icons in another order. It does
-	// nothing on Linux, whose panels place icons themselves.
+	// app makes it again or makes its icons in another order. On Linux it
+	// is the icon's StatusNotifierItem ID, after the program's name, by
+	// which a panel keeps its settings for the icon, as KDE Plasma keeps
+	// whether it shows the icon or hides it.
 	ID string
 	// Icon is a PNG image, ideally 16x16 points (32x32 pixels for Retina).
 	Icon []byte
@@ -919,7 +921,7 @@ func NewTray(opts TrayOptions) (*Tray, error) {
 	t := &Tray{menu: opts.Menu}
 	var err error
 	onMain(func() {
-		t.native, err = backend().NewTray(trayHandler{t})
+		t.native, err = backend().NewTray(opts.ID, trayHandler{t})
 		if err != nil {
 			return
 		}

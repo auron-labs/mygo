@@ -545,6 +545,7 @@ type tray struct {
 	b       *Backend
 	h       platform.TrayHandler
 	id      int
+	name    string // the indicator's ID (trayName)
 	ind     ptr
 	menu    ptr
 	owner   int
@@ -568,7 +569,7 @@ type tray struct {
 	pending    bool
 }
 
-func (b *Backend) NewTray(h platform.TrayHandler) (platform.Tray, error) {
+func (b *Backend) NewTray(id string, h platform.TrayHandler) (platform.Tray, error) {
 	if appIndicatorNew == nil {
 		return nil, fmt.Errorf("mygo: tray icons need libayatana-appindicator3: %w", platform.ErrUnsupported)
 	}
@@ -576,8 +577,8 @@ func (b *Backend) NewTray(h platform.TrayHandler) (platform.Tray, error) {
 	watchTrayWatcher()
 	b.nextTray++
 	t := &tray{b: b, h: h, id: b.nextTray, dark: desktopDark()}
-	name := fmt.Sprintf("mygo-%d-%d", os.Getpid(), t.id)
-	t.ind = appIndicatorNew(cs(name), cs("application-x-executable"), 0) // APPLICATION_STATUS
+	t.name = b.trayName(id, goStr(gGetPrgname()), t.id)
+	t.ind = appIndicatorNew(cs(t.name), cs("application-x-executable"), 0) // APPLICATION_STATUS
 	if t.ind == 0 {
 		return nil, fmt.Errorf("mygo: libayatana-appindicator3 made no tray icon: %w", platform.ErrUnsupported)
 	}
@@ -586,6 +587,37 @@ func (b *Backend) NewTray(h platform.TrayHandler) (platform.Tray, error) {
 	t.SetMenu(&platform.Menu{})
 	b.trays[t.id] = t
 	return t, nil
+}
+
+// trayName is the indicator's ID, its StatusNotifierItem Id, which the
+// icon is given as it is made. A panel keeps its settings for an icon by
+// it, as KDE Plasma keeps whether it shows the icon, and with no watcher
+// libayatana's fallback window is of that class. An icon of an ID is
+// named after the program and the ID, which then stays across launches,
+// and is apart from other apps' icons of that ID; an ID another of the
+// app's icons has takes a number after it. An icon of no ID is named
+// after the process and its number.
+func (b *Backend) trayName(id, program string, n int) string {
+	if id == "" {
+		return fmt.Sprintf("mygo-%d-%d", os.Getpid(), n)
+	}
+	if program == "" {
+		program = "mygo"
+	}
+	base := program + "-" + id
+	taken := func(name string) bool {
+		for _, t := range b.trays {
+			if t.name == name {
+				return true
+			}
+		}
+		return false
+	}
+	name := base
+	for i := 2; taken(name); i++ {
+		name = fmt.Sprintf("%s-%d", base, i)
+	}
+	return name
 }
 
 func (t *tray) SetImage(data []byte, template bool) error {
@@ -683,8 +715,8 @@ func whiten(data []byte) ([]byte, error) {
 	return b.Bytes(), nil
 }
 
-// SetID does nothing: the indicator's ID is given as it is made, and
-// panels place indicators themselves.
+// SetID does nothing: the indicator's ID is given as it is made
+// (NewTray), and panels place indicators themselves.
 func (t *tray) SetID(string) {}
 
 func (t *tray) SetTitle(title string) {

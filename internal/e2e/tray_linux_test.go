@@ -3,8 +3,10 @@
 package e2e
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -69,5 +71,31 @@ func TestTrayIconPath(t *testing.T) {
 	}
 	if b, err := os.ReadFile(icon); err != nil || len(b) == 0 {
 		t.Fatalf("reading the icon %q: %v", icon, err)
+	}
+}
+
+// TestTrayID checks that an icon of an ID is given the panel under it,
+// after the program's name, so that it is the same icon across launches,
+// and that an icon of no ID is named after the process (#1835).
+func TestTrayID(t *testing.T) {
+	tray, err := mygo.NewTray(mygo.TrayOptions{ID: "e2e.icon", Icon: squarePNG(), ToolTip: "id"})
+	if err != nil {
+		t.Skip("no tray: ", err)
+	}
+	var id string
+	mygo.RunOnMain(func() { id = linux.TestTrayID() })
+	tray.Destroy()
+	if want := linux.TestProgramName() + "-e2e.icon"; id != want {
+		t.Errorf("the icon of ID e2e.icon is %q, want %q", id, want)
+	}
+
+	tray, err = mygo.NewTray(mygo.TrayOptions{Icon: squarePNG(), ToolTip: "no id"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tray.Destroy()
+	mygo.RunOnMain(func() { id = linux.TestTrayID() })
+	if want := fmt.Sprintf("mygo-%d-", os.Getpid()); !strings.HasPrefix(id, want) {
+		t.Errorf("the icon of no ID is %q, want it to start %q", id, want)
 	}
 }

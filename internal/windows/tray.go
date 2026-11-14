@@ -88,7 +88,7 @@ type tray struct {
 	template bool
 }
 
-func (b *Backend) NewTray(h platform.TrayHandler) (platform.Tray, error) {
+func (b *Backend) NewTray(_ string, h platform.TrayHandler) (platform.Tray, error) {
 	whitenTemplate = whiten
 	b.nextTray++
 	t := &tray{b: b, h: h, id: b.nextTray}
