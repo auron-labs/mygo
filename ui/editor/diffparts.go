@@ -152,12 +152,20 @@ func (d *DiffState) buildSeparators(c *ui.Context, ct *Theme) {
 		default:
 			return
 		}
-		label := s.Header
+		label, desc := s.Header, ""
 		if s.Lines > 0 {
-			label = l10n.In(c.Locale()).UnmodifiedLines(s.Lines)
+			tx := l10n.In(c.Locale())
+			label = tx.UnmodifiedLines(s.Lines)
+			// Which lines it collapses, as their numbers show once
+			// expanded.
+			g := d.gapList[b.hunk]
+			oldFrom, newFrom := g.hideA+1, g.hideB+1
+			if desc = tx.UnmodifiedLineNumbers(newFrom, newFrom+g.hidden-1); oldFrom != newFrom {
+				desc = tx.UnmodifiedLineNumbersOldNew(oldFrom, oldFrom+g.hidden-1, newFrom, newFrom+g.hidden-1)
+			}
 		}
 		sep := ui.Box(c).Key(key).Absolute().Left(0).Right(ed.trackWidth()).Top(float32(top - ed.scrollY)).Height(b.height).
-			Role(ui.RoleGroup).Label(label).Cursor(ui.CursorDefault).KeepFocus().HandleInput(ed.wheelOnly)
+			Role(ui.RoleGroup).Label(label).Description(desc).Cursor(ui.CursorDefault).KeepFocus().HandleInput(ed.wheelOnly)
 		render(c, sep, s)
 	})
 }

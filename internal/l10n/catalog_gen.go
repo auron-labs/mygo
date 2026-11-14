@@ -762,6 +762,46 @@ func (msgs Messages) UnmodifiedLines(n int) string {
 	return Catalog.Format(msgs.locale, "unmodifiedLines", map[string]any{"n": n})
 }
 
+// UnmodifiedLineNumbers says "Lines {from, number, ::group-off} to {to, number, ::group-off}"
+// in the language the app shows.
+//
+// Which lines a separator of a diff viewer collapses, as assistive
+// technology reads it after "12 unmodified lines", when they have the same
+// numbers in the old and the new text.
+func UnmodifiedLineNumbers(from int, to int) string {
+	return In(i18n.Locale()).UnmodifiedLineNumbers(from, to)
+}
+
+// UnmodifiedLineNumbers says "Lines {from, number, ::group-off} to {to, number, ::group-off}"
+// in the language of msgs.
+//
+// Which lines a separator of a diff viewer collapses, as assistive
+// technology reads it after "12 unmodified lines", when they have the same
+// numbers in the old and the new text.
+func (msgs Messages) UnmodifiedLineNumbers(from int, to int) string {
+	return Catalog.Format(msgs.locale, "unmodifiedLineNumbers", map[string]any{"from": from, "to": to})
+}
+
+// UnmodifiedLineNumbersOldNew says "Old lines {oldFrom, number, ::group-off} to {oldTo, number, ::group-off}, new lines {newFrom, number, ::group-off} to…"
+// in the language the app shows.
+//
+// Which lines a separator of a diff viewer collapses, as assistive
+// technology reads it after "12 unmodified lines", when their numbers
+// differ in the old and the new text.
+func UnmodifiedLineNumbersOldNew(oldFrom int, oldTo int, newFrom int, newTo int) string {
+	return In(i18n.Locale()).UnmodifiedLineNumbersOldNew(oldFrom, oldTo, newFrom, newTo)
+}
+
+// UnmodifiedLineNumbersOldNew says "Old lines {oldFrom, number, ::group-off} to {oldTo, number, ::group-off}, new lines {newFrom, number, ::group-off} to…"
+// in the language of msgs.
+//
+// Which lines a separator of a diff viewer collapses, as assistive
+// technology reads it after "12 unmodified lines", when their numbers
+// differ in the old and the new text.
+func (msgs Messages) UnmodifiedLineNumbersOldNew(oldFrom int, oldTo int, newFrom int, newTo int) string {
+	return Catalog.Format(msgs.locale, "unmodifiedLineNumbersOldNew", map[string]any{"oldFrom": oldFrom, "oldTo": oldTo, "newFrom": newFrom, "newTo": newTo})
+}
+
 // NoNewlineAtEnd says "No newline at end of file"
 // in the language the app shows.
 //
@@ -825,17 +865,33 @@ func (msgs Messages) HunkAction(action string) string {
 // Line says "Line {n, number, ::group-off}"
 // in the language the app shows.
 //
-// The line a gutter button of a diff viewer adds a line at, as assistive
-// technology reads it.
+// A line of a diff viewer, as assistive technology reads it: the line a
+// gutter button adds a line at, and the number of each line it shows.
 func Line(n int) string { return In(i18n.Locale()).Line(n) }
 
 // Line says "Line {n, number, ::group-off}"
 // in the language of msgs.
 //
-// The line a gutter button of a diff viewer adds a line at, as assistive
-// technology reads it.
+// A line of a diff viewer, as assistive technology reads it: the line a
+// gutter button adds a line at, and the number of each line it shows.
 func (msgs Messages) Line(n int) string {
 	return Catalog.Format(msgs.locale, "line", map[string]any{"n": n})
+}
+
+// OldLine says "Old line {n, number, ::group-off}"
+// in the language the app shows.
+//
+// A deleted line a unified diff viewer shows among the new text's, as
+// assistive technology reads its number, which is the old text's.
+func OldLine(n int) string { return In(i18n.Locale()).OldLine(n) }
+
+// OldLine says "Old line {n, number, ::group-off}"
+// in the language of msgs.
+//
+// A deleted line a unified diff viewer shows among the new text's, as
+// assistive technology reads its number, which is the old text's.
+func (msgs Messages) OldLine(n int) string {
+	return Catalog.Format(msgs.locale, "oldLine", map[string]any{"n": n})
 }
 
 // NewText says "New text"

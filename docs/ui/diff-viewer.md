@@ -309,9 +309,23 @@ if err := d.SetPatchFiles(f, old, new); err != nil {
 Assistive technology sees each side as a text field, "Old text" and "New
 text", the old one read only, with its text and selection, and the line
 between the sides of a split view as a splitter named "Divider", whose
-value is the old side's width, which the arrows move. A separator is
-a group named by the lines it collapses, with buttons expanding them up,
-down or all; Revert and Keep are buttons, "Revert change" and "Keep
-change". These names, and what the viewer writes ("4 unmodified lines"),
-are in the window's language
-([MyGo's own strings](../i18n.md#mygos-own-strings)).
+value is the old side's width, which the arrows move. Inside each side,
+every line in view is an element of its own, in the order they show,
+named by its text and described by its number ("Line 12"): a line added
+is an insertion, one deleted a deletion (the old side's changed lines,
+and the deleted lines a unified view shows between the new text's, whose
+numbers are the old text's, "Old line 12"), and an unchanged one a text,
+so that screen readers read each line as what it is. A separator is a group named by how many lines it collapses and
+described by which ("Lines 30 to 41", or the old and the new numbers
+where they differ), with buttons expanding them up, down or all; Revert
+and Keep are buttons, "Revert change" and "Keep change". These names, and
+what the viewer writes ("4 unmodified lines"), are in the window's
+language ([MyGo's own strings](../i18n.md#mygos-own-strings)).
+
+```go
+for _, a := range tt.AccessAll() {
+	if a.Role == ui.RoleInsertion {
+		fmt.Println("added:", a.Description, a.Name) // added: Line 12 return nil
+	}
+}
+```

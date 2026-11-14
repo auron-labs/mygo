@@ -245,6 +245,15 @@ func (h *heights) isHidden(line int) bool {
 	return i < len(h.hidden) && h.hidden[i].from <= line
 }
 
+// hiddenSpan returns the run of hidden lines holding line, a hidden one.
+func (h *heights) hiddenSpan(line int) lineSpan {
+	i := sort.Search(len(h.hidden), func(i int) bool { return h.hidden[i].to >= line })
+	if i < len(h.hidden) && h.hidden[i].from <= line {
+		return h.hidden[i]
+	}
+	return lineSpan{line, line}
+}
+
 // update makes the entries again after the hidden lines or the blocks
 // changed, and the first time, as the zero heights has made none.
 func (h *heights) update() {

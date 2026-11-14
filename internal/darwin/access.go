@@ -93,6 +93,26 @@ func announce(app id, text string, alert bool) {
 	purego.SyscallN(postAccessInfo, uintptr(app), uintptr(nsString("AXAnnouncementRequested")), uintptr(info))
 }
 
+// postSelectionChange tells VoiceOver that the selection of the text
+// field obj moved, and how (AXSelectedTextChanged with WebKit's keys):
+// without them VoiceOver reads the line the caret went to only once it
+// polls the field, a second or so later.
+func postSelectionChange(obj id, c platform.TextSelectionChange) {
+	if obj == 0 {
+		return
+	}
+	info := send(class("NSMutableDictionary"), "dictionary")
+	for _, kv := range []struct {
+		key   string
+		value int
+	}{{"AXTextStateChangeType", c.Type}, {"AXTextSelectionDirection", c.Direction}, {"AXTextSelectionGranularity", c.Granularity}} {
+		send(info, "setObject:forKey:", uintptr(nsNumberInt(kv.value)), uintptr(nsString(kv.key)))
+	}
+	send(info, "setObject:forKey:", uintptr(nsBool(false)), uintptr(nsString("AXTextSelectionChangedFocus")))
+	send(info, "setObject:forKey:", uintptr(obj), uintptr(nsString("AXTextChangeElement")))
+	purego.SyscallN(postAccessInfo, uintptr(obj), uintptr(nsString("AXSelectedTextChanged")), uintptr(info))
+}
+
 // accessRoles are the roles and subroles of node roles.
 var accessRoles = map[platform.AccessRole][2]string{
 	platform.RoleGroup:        {"AXGroup", ""},
@@ -589,6 +609,12 @@ func (s *surface) updateAccessibility(tree *platform.AccessTree) {
 		changed := false
 		objs := make([]id, len(tree.Nodes))
 		var valueChanged, busyChanged []id
+		// Text fields whose selection alone moved, and how.
+		type moved struct {
+			obj id
+			c   platform.TextSelectionChange
+		}
+		var selMoved []moved
 		fresh := map[uint64]bool{}
 		for i, n := range tree.Nodes {
 			// VoiceOver reads no chosen state of a cell (AXSelected), nor
@@ -611,6 +637,10 @@ func (s *surface) updateAccessibility(tree *platform.AccessTree) {
 				changed = true
 			} else {
 				wasBusy := el.node.States & platform.AccessBusy
+				o := &el.node
+				if textual(n.Role) && textual(o.Role) && n.Value == o.Value && (n.SelStart != o.SelStart || n.SelEnd != o.SelEnd) {
+					selMoved = append(selMoved, moved{el.obj, platform.SelectionChange(n.Value, o.SelStart, o.SelEnd, n.SelStart, n.SelEnd)})
+				}
 				if el.apply(n, false) {
 					valueChanged = append(valueChanged, el.obj)
 				}
@@ -838,6 +868,9 @@ func (s *surface) updateAccessibility(tree *platform.AccessTree) {
 		}
 		for _, obj := range valueChanged {
 			postNote(obj, "AXValueChanged")
+		}
+		for _, m := range selMoved {
+			postSelectionChange(m.obj, m.c)
 		}
 		for _, el := range selectionChanged {
 			postNote(el.obj, "AXSelectedRowsChanged")
@@ -1375,16 +1408,62 @@ func registerAccessClass() {
 			}
 			return attributedAccessString(&el.node, r)
 		}),
-		method("accessibilityLineForIndex:", func(self id, _ objc.SEL, i int) int { return 0 }),
+		// Lines of the text, which VoiceOver reads by: a line ends after
+		// its line feed, as the Windows and Linux bridges take lines.
+		method("accessibilityLineForIndex:", func(self id, _ objc.SEL, i int) int {
+			if el := b().accessElementOf(self); el != nil {
+				return platform.LineOfUnit(el.node.Value, i)
+			}
+			return 0
+		}),
 		method("accessibilityRangeForLine:", func(self id, _ objc.SEL, line int) nsRange {
 			if el := b().accessElementOf(self); el != nil {
-				return nsRange{Length: uint(units([]rune(el.node.Value)))}
+				if start, n, ok := platform.LineUnits(el.node.Value, line); ok {
+					return nsRange{Location: uint(start), Length: uint(n)}
+				}
 			}
-			return nsRange{}
+			return nsRange{Location: nsNotFound}
 		}),
+		// The line the caret is on, which VoiceOver reads as it moves,
+		// and the text in view, found as asked rather than every frame,
+		// as they take a walk through the text.
+		method("accessibilityInsertionPointLineNumber", func(self id, _ objc.SEL) int {
+			el := b().accessElementOf(self)
+			if el == nil {
+				return 0
+			}
+			line, i := 0, 0
+			for _, r := range el.node.Value {
+				if i >= el.node.SelStart {
+					break
+				}
+				if r == '\n' {
+					line++
+				}
+				i++
+			}
+			return line
+		}),
+		method("accessibilityVisibleCharacterRange", func(self id, _ objc.SEL) nsRange {
+			el := b().accessElementOf(self)
+			if el == nil {
+				return nsRange{}
+			}
+			n := &el.node
+			if len(n.LineBoxes) == 0 {
+				return nsRange{Length: uint(units([]rune(n.Value)))}
+			}
+			first, _, _ := platform.LineUnits(n.Value, n.LineBoxes[0].Line)
+			start, count, _ := platform.LineUnits(n.Value, n.LineBoxes[len(n.LineBoxes)-1].Line)
+			return nsRange{Location: uint(first), Length: uint(max(start+count-first, 0))}
+		}),
+		// Where a range shows, which VoiceOver's cursor outlines: the
+		// lines it is on, as the content laid them out, else the element.
 		method("accessibilityFrameForRange:", func(self id, _ objc.SEL, r nsRange) NSRect {
 			if el := b().accessElementOf(self); el != nil {
-				return el.s.screenRect(el.node.Bounds)
+				lo := int(min(r.Location, uint(1<<31)))
+				n := int(min(r.Length, uint(1<<31)))
+				return el.s.screenRect(platform.RangeBounds(&el.node, lo, n))
 			}
 			return NSRect{}
 		}),

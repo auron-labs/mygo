@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/egoist/mygo/internal/l10n"
+	"github.com/egoist/mygo/internal/platform"
 	"github.com/egoist/mygo/ui"
 )
 
@@ -181,6 +182,8 @@ type editor struct {
 	// part of the editor the window showed last frame.
 	hbarY float32
 	shown [2]int // the first and last lines the last frame showed
+	// accessLinesFn is accessLines, made once rather than every frame.
+	accessLinesFn func(parent *platform.AccessNode, add func(platform.AccessNode))
 	// shownY is the part of the content the last frame painted showed,
 	// and pad the height of the view it showed in, for an editor as high
 	// as its content; builtY is the part the last build built the blocks

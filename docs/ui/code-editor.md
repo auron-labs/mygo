@@ -639,7 +639,9 @@ app.code.RenderHover = func(c *ui.Context, panel ui.Element, h *editor.HoverCard
 
 Assistive technology sees a multi-line text field, named by `Label`, with
 the text of the buffer, replaced ranges among it, and the newest selection,
-which it moves; the elements of replacements are named by their `Label`; the
+which it moves, and where its lines in view are, so that VoiceOver moves
+through it line by line and outlines the line it reads; the elements of
+replacements are named by their `Label`; the
 completions are a list, and the find bar a toolbar that tells the count
 of matches, except in a narrow editor, where its query field still tells
 an invalid regular expression. The editor's menu, its find and go to line bars and their

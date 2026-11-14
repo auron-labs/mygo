@@ -172,6 +172,55 @@ func TestDeletionInsertion(t *testing.T) {
 	}
 }
 
+// TestAccessChildren checks the nodes an element adds inside its own
+// (AccessChildren), as a diff viewer its lines: after the element's node
+// and before the elements inside it, with their roles, only while
+// assistive technology reads the window, and doing nothing when acted on.
+func TestAccessChildren(t *testing.T) {
+	calls := 0
+	tt := coreNewTester(func(c *context) {
+		coreBox(c).Size(200, 100).Role(RoleTextField).Label("Diff").Access(func(n *platform.AccessNode) {
+			n.Value = "a\nb"
+		}).AccessChildren(func(parent *platform.AccessNode, add func(platform.AccessNode)) {
+			calls++
+			if parent.Label != "Diff" || parent.Value != "a\nb" {
+				t.Errorf("the hook reads %q, %q, not the element's node", parent.Label, parent.Value)
+			}
+			add(platform.AccessNode{ID: parent.ID ^ 1, Role: platform.RoleDeletion, Label: "a", Description: "Line 1"})
+			add(platform.AccessNode{ID: parent.ID ^ 2, Role: platform.RoleInsertion, Label: "b", Description: "Line 1"})
+		}).Children(func() { coreText(c, "find bar") })
+	}, 400, 400)
+	if calls != 0 {
+		t.Fatalf("the hook ran %d times with no assistive technology", calls)
+	}
+	tt.send(platform.SurfaceEvent{Kind: platform.AccessibilityOn})
+	tree := tt.h.access
+	field := accessNode(t, tree, platform.RoleTextField, "Diff")
+	var labels []string
+	for _, n := range tree.Nodes {
+		if n.Parent >= 0 && tree.Nodes[n.Parent].ID == field.ID {
+			labels = append(labels, n.Label)
+		}
+	}
+	if !slices.Equal(labels, []string{"a", "b", "find bar"}) {
+		t.Errorf("inside the field: %q, want the nodes added, then the elements", labels)
+	}
+	var roles []Role
+	for _, a := range tt.AccessAll() {
+		roles = append(roles, a.Role)
+	}
+	if !slices.Equal(roles, []Role{RoleTextField, RoleDeletion, RoleInsertion, RoleText}) {
+		t.Errorf("Tester.AccessAll gives roles %v", roles)
+	}
+	if a, ok := tt.AccessByRole(RoleInsertion, "b"); !ok || a.Description != "Line 1" {
+		t.Errorf("Tester.AccessByRole: %+v, %v", a, ok)
+	}
+	// Nothing to act on: no element has the node's ID.
+	del := accessNode(t, tree, platform.RoleDeletion, "a")
+	tt.send(platform.SurfaceEvent{Kind: platform.AccessAction, ID: del.ID, Action: platform.AccessPress})
+	tt.Frame()
+}
+
 // TestSearch checks that a text input of an app's own asks to be a
 // search field (searchbox), as SearchField's input is, while it calls
 // Search.

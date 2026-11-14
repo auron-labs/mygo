@@ -69,6 +69,13 @@ func (ed *editor) build(c *ui.Context, buf *Buffer, o options) ui.Element {
 		label = ed.texts.CodeEditor()
 	}
 	e.Role(ui.RoleTextField).Label(label).Access(ed.accessibility)
+	if _, diff := o.decor.(*diffSide); diff {
+		// Its lines in view, each read as what it is.
+		if ed.accessLinesFn == nil {
+			ed.accessLinesFn = ed.accessLines
+		}
+		e.AccessChildren(ed.accessLinesFn)
+	}
 	if !o.readOnly {
 		e.HandleTextInput(ed).InputMethod(!o.noInputMethod)
 		if o.noInputMethod && ed.markedActive {
@@ -206,10 +213,13 @@ func (ed *editor) accessibility(n *platform.AccessNode) {
 	r := &ed.view.text
 	if r.Len() > 4<<20 {
 		// Assistive technology gets the lines in view of a very large text.
-		n.Value = ed.slice(r.LineStart(ed.anchorLine), r.LineEnd(min(r.LineCount()-1, ed.anchorLine+200)))
+		last := min(r.LineCount()-1, ed.anchorLine+200)
+		n.Value = ed.slice(r.LineStart(ed.anchorLine), r.LineEnd(last))
+		n.LineBoxes = ed.lineBoxes(ed.anchorLine, last)
 		return
 	}
 	n.Value = r.String()
+	n.LineBoxes = ed.lineBoxes(0, r.LineCount()-1)
 	p := ed.primary()
 	n.SelStart = utf8.RuneCountInString(n.Value[:min(p.start(), len(n.Value))])
 	n.SelEnd = n.SelStart + utf8.RuneCountInString(n.Value[min(p.start(), len(n.Value)):min(p.end(), len(n.Value))])

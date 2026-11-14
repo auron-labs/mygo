@@ -193,8 +193,8 @@ func (t *Tester) accessEach(fn func(r Role, n *platform.AccessNode, info func() 
 		if !ok {
 			// One the role of what it does: a text, a button, a group…,
 			// which follow RoleGroup in the order of the node's roles
-			// (accessRole).
-			r = Role(n.Role) + RoleGroup
+			// (accessRole), or a node an element added (AccessChildren).
+			r = roleOfNode(n.Role)
 		}
 		info := func() AccessInfo {
 			a := accessInfoOf(r, n, tree.Focus)
@@ -217,6 +217,16 @@ func (t *Tester) accessEach(fn func(r Role, n *platform.AccessNode, info func() 
 			return
 		}
 	}
+}
+
+// roleOfNode returns the Role of a node's role: those up to RoleTreeGrid
+// follow RoleGroup in the same order, and those after it RoleOption, as
+// the node's roles have no list box nor option of their own.
+func roleOfNode(r platform.AccessRole) Role {
+	if r >= platform.RoleDeletion {
+		return Role(r-platform.RoleDeletion) + RoleDeletion
+	}
+	return Role(r) + RoleGroup
 }
 
 // accessInfoOf returns what n tells of an element of role r, in the tree
