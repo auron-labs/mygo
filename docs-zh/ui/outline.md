@@ -27,6 +27,19 @@ func (app *fileTree) view(c *ui.Context) {
 
 `OutlineState` 保存大纲状态：各行的 `ListState` 通过 `Selected`、`Selection` 控制选择，与列表的 `ListState` 相同；`Open` 则是包含所有已展开项目的 `Selection`。行以项目为键，因此上方项目展开或收起后，选择和行状态仍对应原来的项目。`Rows`、`Item` 和 `Depth` 用于读取当前显示的行。`Indent` 设置每深入一层在箭头前增加的缩进，为零时使用主题的 `Space(4)`，不能为负。`Prefix` 可自定义行首内容（[自己的行](#自己的行)）。
 
+## 大型展开树
+
+大纲在每一帧遍历所有已展开的项目来确定各行，开销与它们的数量成正比：像大型变更集的“显示全部更改”视图或“全部展开”那样展开数十万项时，每帧需要数毫秒。设置 `Generation` 可在帧之间保留各行：只有当 `Open`、顶层项目或 `Generation` 变化时，大纲才会重新遍历，因此每当 `children` 的返回结果变化时都要修改它。
+
+```go
+app.files.Generation = 1 // 创建大纲时设置一次
+
+func (app *fileTree) refreshed(children map[string][]string) {
+	app.children = children
+	app.files.Generation++ // children 返回了不同的项目
+}
+```
+
 ## 打开和关闭
 
 - 单击项目的箭头会打开或关闭它；按住 Option 单击（按住 Alt 单击）也会打开或关闭其中的所有项目。

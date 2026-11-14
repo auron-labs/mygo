@@ -1865,12 +1865,13 @@ func NumberInput(c *Context, value *float64, lo float64, hi float64, step float6
 // children's children with Option (Alt). row builds the content of an
 // item's row, after its arrow; Gap, Padding and the rest are a List's.
 //
-// The outline builds only the rows in view, as a List does, so trees of
-// any size are as fast as small ones. With s.List.Selected or Selection,
-// rows are chosen as a List's, and while the outline has the focus, Right
-// opens the item chosen or goes to its first child, and Left closes it or
-// goes to its parent, with Option on macOS and Shift elsewhere, as in GTK,
-// opening and closing all inside.
+// The outline builds only the rows in view, as a List does. It walks the
+// open items in every frame, unless s.Generation tells it when children
+// changes, which keeps trees of any size as fast as small ones. With
+// s.List.Selected or Selection, rows are chosen as a List's, and while
+// the outline has the focus, Right opens the item chosen or goes to its
+// first child, and Left closes it or goes to its parent, with Option on
+// macOS and Shift elsewhere, as in GTK, opening and closing all inside.
 //
 //	app.files.List.Selected = &app.file
 //	ui.Outline(c, &app.files, []string{"/"}, func(dir string) []string {

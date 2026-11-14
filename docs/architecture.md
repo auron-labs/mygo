@@ -4309,8 +4309,13 @@ either.
   a text; a click on the text of a row chosen before the click edits it
   once the double-click time has passed.
 - **Outlines** (`ui/outline.go`). An outline flattens the open part of
-  its tree into rows every frame (`OutlineState.flatten`), which a `List`
-  or a `Table` builds as they show, keyed by their items. Rows are tree
+  its tree into rows (`OutlineState.flatten`), which a `List` or a
+  `Table` builds as they show, keyed by their items: every frame, or,
+  with a `Generation`, which the app changes as `children` does, only
+  when it, `Open` or the roots change. `Open` changes are seen by the
+  stamp of a `Selection`, which each change of its keys takes from one
+  counter of all Selections (`selectionStamps`), so another Selection
+  put in its place has another stamp. Rows are tree
   items, with how deep they are (`AccessNode.Level`) and whether they
   have children (`AccessExpandable`), open or not: on macOS, the rows of
   an `AXOutline` with `AXDisclosureLevel` and `AXDisclosing`, which keeps

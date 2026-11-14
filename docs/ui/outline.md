@@ -39,6 +39,24 @@ each level adds before a row's arrow, the theme's `Space(4)` when zero; it
 must not be negative. `Prefix` builds the start of the rows instead
 ([rows of your own](#rows-of-your-own)).
 
+## Large open trees
+
+The outline walks its open items in every frame to know its rows, which
+costs as much as they are many: hundreds of thousands open, as a "show all
+changes" view or "expand all" of a large change set has, take milliseconds
+a frame. Set `Generation` to keep the rows from one frame to the next: the
+outline walks the items again only when `Open`, the roots or `Generation`
+change, so change it whenever `children` would return something else.
+
+```go
+app.files.Generation = 1 // once, as the outline is made
+
+func (app *fileTree) refreshed(children map[string][]string) {
+	app.children = children
+	app.files.Generation++ // children returns other items
+}
+```
+
 ## Opening and closing
 
 - A click on an item's arrow opens or closes it; Option-click (Alt-click)
