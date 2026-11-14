@@ -2101,6 +2101,12 @@ as in Tauri:
   one no handler of the page cancelled (an `escape` message). `Flyout.Popover` shows one in an
   `NSPopover` (`internal/darwin/popover.go`), whose window AppKit makes
   as it shows, and whose transient behavior asks `popoverShouldClose:`.
+  A closed popover flyout's `NSPopover` waits for the next one to show
+  in (`takePopover`) instead of being released: on macOS 26 a released
+  popover that has shown leaves its material's backdrop behind, a
+  graphics surface a little larger than the popover. One still closing,
+  as Hide's animation runs, waits until it tells it closed
+  (`popoverDidClose:`, to `spareDelegate`).
   `Flyout.Tray` anchors one to a tray icon's `Bounds` instead, without a
   parent: the panel at `NSPopUpMenuWindowLevel` or an `NSPopover` shown
   from the status item's button (macOS), a topmost unowned popup
