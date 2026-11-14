@@ -3246,9 +3246,12 @@ either.
   with `After`, or waits for the goroutine to wake the window (`waiting`)
   when it has no frame due yet. A video of the system's media framework
   (`ui/video`, below) moves on by the framework's clock instead; a muted
-  one holds still out of sight, as a decoder's does. The window shows its last
-  frame until then, about a refresh: captures of it meanwhile, as sharing
-  its window in a video call, see that frame. A frame still builds after
+  one holds still out of sight, as a decoder's does. Either asks for its
+  next frame from a frame built out of sight too, which waits for the
+  window to show: asking for none, nothing would build it once it
+  shows. The window shows its last frame until then, about a refresh:
+  captures of it meanwhile, as sharing its window in a video call, see
+  that frame. A frame still builds after
   input (`input`, as keys typed into a key window another app's covers),
   as assistive technology turns on, and for `CapturePage`, which builds
   the frame waiting, held or asked for and not come
@@ -3373,7 +3376,10 @@ either.
   window asks for the next picture with `After` at the engine's interval,
   or an engine that knows when one comes (GStreamer's appsink, the
   element's `requestVideoFrameCallback`) wakes it (`Engine.SetWake`),
-  as it does for a change of state. The interval is asked for only once
+  as it does for a change of state and for the first picture, though
+  `Frame` is what makes AVFoundation's ready: its goroutine wakes the
+  window once the output has a picture, for nothing else may build a
+  frame to take it (#1830). The interval is asked for only once
   the video loaded: AVFoundation's reads the nominal frame rate on the
   engine's goroutine once the item is ready to play, as reading an
   `AVURLAsset`'s tracks before then loads them, over the network, on the

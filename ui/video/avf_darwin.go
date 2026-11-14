@@ -320,12 +320,19 @@ func itoa(n uint64) string {
 
 // watch follows how loading and playing go, as the player reports it,
 // and wakes the window when that changes: a loop seeks back at the end.
+// It wakes the window for the first picture too, which only Frame takes,
+// on the main thread, as a frame of the window builds: the state stays
+// Loading until then, and nothing else may build one (#1830).
 func (e *avEngine) watch() {
 	defer close(e.done)
 	runtime.LockOSThread() // for the autorelease pools
 	defer runtime.UnlockOSThread()
 	tick := time.NewTicker(25 * time.Millisecond)
 	defer tick.Stop()
+	// When the window was last woken for a first picture, which it wakes
+	// for again while none was taken: a frame woken may build before the
+	// output has it at the frame's time, or while none of the window shows.
+	var wokeFirst time.Time
 	for {
 		select {
 		case <-e.quit:
@@ -337,11 +344,21 @@ func (e *avEngine) watch() {
 		before, beforeErr := e.state, e.err
 		e.poll()
 		changed := e.state != before || e.err != beforeErr
+		loading := e.state == media.Loading
 		wake := e.wake
 		e.mu.Unlock()
-		if e.interval.Load() == 0 && msgInt(e.item, sel("status")) == avStatusReadyToPlay {
+		ready := msgInt(e.item, sel("status")) == avStatusReadyToPlay
+		if ready && e.interval.Load() == 0 {
 			// Out of mu: State, on the main thread, never waits for it.
 			e.interval.Store(int64(e.frameInterval()))
+		}
+		if ready && loading && time.Since(wokeFirst) >= 250*time.Millisecond {
+			// The output has the first picture once it has one for now,
+			// which the frame woken, due a little later, takes.
+			at := msgItemTimeForHostTime(e.output, sel("itemTimeForHostTime:"), caCurrentMediaTime())
+			if msgHasNewBuffer(e.output, sel("hasNewPixelBufferForItemTime:"), at) {
+				wokeFirst, changed = time.Now(), true
+			}
 		}
 		poolPop(pool)
 		if changed && wake != nil {

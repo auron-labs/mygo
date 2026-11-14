@@ -39,15 +39,49 @@ func played(t *testing.T, open func() (*ui.VideoPlayer, error)) (*ui.VideoPlayer
 	shows := func() color.RGBA { return tt.Image().RGBAAt(32, 24) }
 	wait.Until(t, "the first picture", func() bool {
 		tt.Frame()
-		if err := p.Err(); err != nil {
-			if strings.Contains(err.Error(), "missing") || strings.Contains(err.Error(), "decoder") {
-				t.Skip("no H.264 decoder:", err)
-			}
-			t.Fatal(err)
-		}
+		checkErr(t, p)
 		return p.Ready()
 	})
 	return p, tt, shows
+}
+
+// checkErr fails the test on the error that stopped p, or skips it on a
+// system that has no H.264 decoder.
+func checkErr(t *testing.T, p *ui.VideoPlayer) {
+	t.Helper()
+	if err := p.Err(); err != nil {
+		if strings.Contains(err.Error(), "missing") || strings.Contains(err.Error(), "decoder") {
+			t.Skip("no H.264 decoder:", err)
+		}
+		t.Fatal(err)
+	}
+}
+
+// TestWakesForFirstPicture checks that the engine wakes the window for
+// the video's first picture: a window that built the video once, before
+// it had one, and that builds no frame unless woken, as one showing only
+// the video, shows it (#1830).
+func TestWakesForFirstPicture(t *testing.T) {
+	p, err := OpenData(rgbMP4)
+	if errors.Is(err, ErrUnsupported) {
+		t.Skip(err)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(p.Close)
+	p.SetMuted(true)
+	tt := ui.NewTester(func(c *ui.Context) { ui.Video(c, p).Size(64, 48) }, 64, 48)
+	for !p.Ready() {
+		// Only the frames the window is woken for build: the engine's
+		// changes of state, and its first picture.
+		wait.Until(t, "a wake, the video not ready", tt.FramePending)
+		tt.Frame()
+		checkErr(t, p)
+	}
+	if w, h := p.Size(); w != 64 || h != 48 {
+		t.Fatalf("size %d×%d, want 64×48", w, h)
+	}
 }
 
 // near reports whether c is the color want, give or take what H.264 and

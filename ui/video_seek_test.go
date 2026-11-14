@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/egoist/mygo/internal/media"
+	"github.com/egoist/mygo/internal/platform"
 	"github.com/egoist/mygo/internal/scene"
 	"github.com/egoist/mygo/internal/wait"
 )
@@ -431,7 +432,13 @@ func TestEngineVideo(t *testing.T) {
 	}
 	e.setState(media.Ready)
 	builds := tt.rt.frame
+	if tt.FramePending() {
+		t.Fatal("loading: a frame asked for")
+	}
 	e.wakeNow()
+	if !tt.FramePending() {
+		t.Fatal("the engine's wake asked for no frame")
+	}
 	tt.Frame()
 	if got := shows(); got != videoRed || !p.Ready() || tt.rt.frame == builds {
 		t.Fatalf("loaded: %v, ready %v", got, p.Ready())
@@ -506,5 +513,40 @@ func TestEngineVideoReadyByFrame(t *testing.T) {
 	tt.Advance(100 * time.Millisecond)
 	if got := shows(); got != videoGreen {
 		t.Fatalf("100ms on: %v", got)
+	}
+}
+
+// TestEngineVideoBuiltOutOfSight checks that a frame built while none of
+// the window shows, as keys typed into a window that another covers build
+// one, asks for the frame of the next picture, which waits for the window
+// to show and builds once it does: the video goes on, muted or not,
+// rather than stand still for good while its sound plays on.
+func TestEngineVideoBuiltOutOfSight(t *testing.T) {
+	for _, muted := range []bool{false, true} {
+		e := &fakeEngine{colors: []color.RGBA{videoRed, videoGreen, videoBlue}, shown: -1, state: media.Loading, readyOnFrame: true}
+		p := NewEngineVideoPlayer(e).SetMuted(muted)
+		tt, shows := videoTester(p, nil)
+		if got := shows(); got != videoRed || !p.Ready() {
+			t.Fatalf("muted %v, first picture: %v, ready %v", muted, got, p.Ready())
+		}
+		tt.h.hidden = true
+		tt.Frame()
+		if tt.h.afterAt.IsZero() {
+			t.Fatalf("muted %v, built out of sight: no frame asked for", muted)
+		}
+		tt.Advance(100 * time.Millisecond)
+		if !tt.rt.held {
+			t.Fatalf("muted %v, out of sight: the frame asked for is not held", muted)
+		}
+		tt.h.hidden = false
+		tt.rt.event(platform.SurfaceEvent{Kind: platform.SurfaceShown})
+		if !tt.FramePending() {
+			t.Fatalf("muted %v, shown again: no frame asked for", muted)
+		}
+		tt.Frame()
+		if !e.playing || shows() == videoRed {
+			t.Fatalf("muted %v, shown again: playing %v, showing %v", muted, e.playing, shows())
+		}
+		p.Close()
 	}
 }

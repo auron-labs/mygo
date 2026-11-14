@@ -161,7 +161,16 @@ func (v *videoEngine) advance(c *context, p *VideoPlayer) {
 	occluded := rt.host.occluded()
 	v.hold(v.muted && (occluded || rt.preferences().ReduceMotion))
 	if occluded {
-		return // no frame builds until some of the window shows again
+		// No frame builds until some of the window shows again, but this
+		// one did, as keys typed into a window that another covers build
+		// one: the frame it asks for waits for the window to show
+		// (holdFrame), which builds it then (SurfaceShown), as a
+		// decoder's video does. Asking for none, nothing would build
+		// once it shows, and the picture would stand still for good.
+		if v.playing() && v.state != media.Loading {
+			v.askNext(c, p)
+		}
+		return
 	}
 	if pic, changed, ok := v.e.Frame(c.now); ok {
 		v.ready = true
@@ -180,9 +189,15 @@ func (v *videoEngine) advance(c *context, p *VideoPlayer) {
 	// Interval only once loaded: an engine may learn the video's rate as
 	// it loads, which AVFoundation would wait for on the main thread.
 	if v.playing() && !v.held && v.state != media.Loading {
-		if d := v.e.Interval(); d > 0 {
-			c.After(time.Duration(float64(d) / p.rate))
-		}
+		v.askNext(c, p)
+	}
+}
+
+// askNext asks for the frame of the next picture, at the engine's
+// interval: an engine of none wakes the window as each comes due.
+func (v *videoEngine) askNext(c *context, p *VideoPlayer) {
+	if d := v.e.Interval(); d > 0 {
+		c.After(time.Duration(float64(d) / p.rate))
 	}
 }
 
