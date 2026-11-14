@@ -1088,6 +1088,185 @@ func TestTruncateMiddleEnds(t *testing.T) {
 	}
 }
 
+// checkStartCut returns from where a line that TruncateStart cut keeps
+// the runes of its paragraph, checking it as checkMiddleCut does and
+// that the ellipsis, before them, keeps none of its start.
+func checkStartCut(t *testing.T, l *Layout) (resume int) {
+	t.Helper()
+	cut, resume := checkMiddleCut(t, l)
+	if cut != 0 {
+		t.Fatalf("keeps %d runes before the ellipsis", cut)
+	}
+	return resume
+}
+
+func TestTruncateStart(t *testing.T) {
+	s := newSystem()
+	s.UseTruncateStart()
+	path := "src/components/settings/appearance/theme/picker.go"
+	p := Params{Text: path, Style: Style{Size: 14}, Width: 160, MaxLines: 1, TruncateStart: true}
+	l := s.Layout(p)
+	resume := checkStartCut(t, l)
+	line := l.Lines[0]
+	if line.Width > p.Width {
+		t.Errorf("the line is %v wide in %v", line.Width, p.Width)
+	}
+	if g := line.Glyphs[0]; g.Runes != 0 {
+		t.Errorf("the line starts with %+v, not the ellipsis", g)
+	}
+	if resume > len(path)-len("theme/picker.go") {
+		t.Errorf("kept …%q", path[resume:])
+	}
+	// It keeps as much of the end as fits: one grapheme more does not.
+	width := func(text string) float32 { return s.Layout(Params{Text: text, Style: p.Style}).Width }
+	if w := width("…" + path[resume-1:]); w <= p.Width {
+		t.Errorf("…%q is %v wide, fitting %v", path[resume-1:], w, p.Width)
+	}
+	// The runes it hides, its first too, sit where the text resumes,
+	// after the ellipsis, as those an end cut hides sit before it.
+	at, _, _ := l.Caret(resume)
+	for i := 0; i < resume; i++ {
+		if x, _, _ := l.Caret(i); x != at {
+			t.Errorf("the caret before hidden rune %d is at %v, not %v", i, x, at)
+		}
+	}
+	prev := float32(-1)
+	for i := 0; i <= len(path); i++ {
+		x, _, _ := l.Caret(i)
+		if x < prev {
+			t.Errorf("the caret before rune %d is at %v, left of %v", i, x, prev)
+		}
+		prev = x
+	}
+	if i := l.IndexAt(-10, 5); i != resume {
+		t.Errorf("before the start is rune %d, not %d", i, resume)
+	}
+	if i := l.IndexAt(line.Width+10, 5); i != len(path) {
+		t.Errorf("past the end is rune %d", i)
+	}
+	// Asked for both, the start is cut.
+	p.TruncateMiddle = true
+	if r := checkStartCut(t, s.Layout(p)); r != resume {
+		t.Errorf("with TruncateMiddle too, resumes at %d, not %d", r, resume)
+	}
+}
+
+func TestTruncateStartGraphemes(t *testing.T) {
+	s := newSystem()
+	s.UseTruncateStart()
+	for _, text := range []string{strings.Repeat("é", 40), strings.Repeat("👩‍👩‍👧‍👦", 12)} {
+		l := s.Layout(Params{Text: text, Style: Style{Size: 14}, Width: 90, MaxLines: 1, TruncateStart: true})
+		resume := checkStartCut(t, l)
+		var b Boundaries
+		b.Reset(l.Runes)
+		if _, ok := slices.BinarySearch(b.graphemes, resume); !ok {
+			t.Errorf("%q resumes at rune %d, inside a grapheme", text, resume)
+		}
+	}
+}
+
+func TestTruncateStartRTL(t *testing.T) {
+	s := newSystem()
+	s.UseTruncateStart()
+	for _, text := range []string{
+		"שלום עולם זהו טקסט ארוך מאוד שצריך לקצר בהתחלה",
+		"مرحبا بالعالم هذا نص طويل جدا يجب اختصاره في البداية",
+		"docs/מדריכים/התחלה/מהירה/readme.md",
+	} {
+		p := Params{Text: text, Style: Style{Size: 14}, Width: 140, MaxLines: 1, TruncateStart: true}
+		l := s.Layout(p)
+		resume := checkStartCut(t, l)
+		line := l.Lines[0]
+		joins := strings.ContainsFunc(text, func(r rune) bool { return unicode.Is(unicode.Arabic, r) })
+		if line.Width > p.Width && !joins || resume == len(l.Runes) {
+			t.Errorf("%q: %v wide, resuming at %d", text, line.Width, resume)
+		}
+		if want := isRTL(l.Runes, false); line.RTL != want {
+			t.Errorf("%q: RTL %v", text, line.RTL)
+		}
+	}
+}
+
+func TestTruncateStartSpans(t *testing.T) {
+	s := newSystem()
+	s.UseTruncateStart()
+	// A folder in the style of the text, then a file's name larger.
+	text := "src/components/settings/theme/picker.go"
+	name := strings.Index(text, "picker")
+	spans := EncodeSpans([]Span{{End: name}, {End: len(text), Size: 20}})
+	l := s.Layout(Params{Text: text, Style: Style{Size: 12}, Spans: spans, Width: 180, MaxLines: 1, TruncateStart: true})
+	resume := checkStartCut(t, l)
+	if resume > name {
+		t.Fatalf("resumes at %d, after the name at %d", resume, name)
+	}
+	for _, g := range l.Lines[0].Glyphs {
+		want := float32(12)
+		if g.Runes > 0 && g.Cluster >= name {
+			want = 20
+		}
+		if g.Size != want {
+			t.Errorf("glyph %+v of rune %d (resuming at %d) is %v large", g, g.Cluster, resume, g.Size)
+		}
+	}
+	// Where only the name shows, the ellipsis takes its style, as it
+	// takes that of the text it ends at the end of a line.
+	l = s.Layout(Params{Text: text, Style: Style{Size: 12}, Spans: spans, Width: 80, MaxLines: 1, TruncateStart: true})
+	if resume := checkStartCut(t, l); resume < name {
+		t.Fatalf("resumes at %d, before the name at %d", resume, name)
+	}
+	for _, g := range l.Lines[0].Glyphs {
+		if g.Size != 20 {
+			t.Errorf("glyph %+v is %v large", g, g.Size)
+		}
+	}
+}
+
+func TestTruncateStartEnds(t *testing.T) {
+	s := newSystem()
+	text := "src/components/settings/appearance/theme/picker.go"
+	p := Params{Text: text, Style: Style{Size: 14}, Width: 160, MaxLines: 1, TruncateStart: true}
+	endsWithEllipsis := func(l *Layout) bool {
+		gs := l.Lines[0].Glyphs
+		return l.Truncated && gs[len(gs)-1].Runes == 0 && l.Lines[0].End < len(l.Runes)
+	}
+	// Before UseTruncateStart the ellipsis ends the line.
+	if l := s.Layout(p); !endsWithEllipsis(l) {
+		t.Errorf("without UseTruncateStart: %+v", l.Lines[0])
+	}
+	s.UseTruncateStart()
+	// So it does where the paragraph fits and only the next one is cut,
+	// and without a width.
+	for _, q := range []Params{
+		{Text: "src/a.go\nsrc/b.go", Style: p.Style, Width: 160, MaxLines: 1, TruncateStart: true},
+		{Text: text + "\n" + text, Style: p.Style, MaxLines: 1, TruncateStart: true},
+	} {
+		if l := s.Layout(q); !endsWithEllipsis(l) {
+			t.Errorf("%q in %v: %+v", q.Text, q.Width, l.Lines[0])
+		}
+	}
+	// A text that fits is not cut.
+	p.Width = 1000
+	if l := s.Layout(p); l.Truncated {
+		t.Errorf("a text that fits is cut: %+v", l.Lines[0])
+	}
+	// The last of several lines is cut at its start, keeping the end of
+	// its paragraph, and the lines before it are whole.
+	long := "The quick brown fox jumps over the lazy dog and keeps running to the end.txt"
+	whole := s.Layout(Params{Text: long, Style: p.Style, Width: 160})
+	l := s.Layout(Params{Text: long, Style: p.Style, Width: 160, MaxLines: 2, TruncateStart: true})
+	if len(l.Lines) != 2 || !l.Truncated || len(whole.Lines) < 3 {
+		t.Fatalf("%d lines, truncated %v, of %d", len(l.Lines), l.Truncated, len(whole.Lines))
+	}
+	if first := l.Lines[0]; first.Start != 0 || first.End != whole.Lines[0].End {
+		t.Errorf("the first line holds runes %d to %d, not to %d", first.Start, first.End, whole.Lines[0].End)
+	}
+	last := l.Lines[1]
+	head, tail := last.Glyphs[0], last.Glyphs[len(last.Glyphs)-1]
+	if head.Runes != 0 || head.Cluster != last.Start || last.End != len(l.Runes) || tail.Cluster+tail.Runes != len(l.Runes) || last.Width > 160 {
+		t.Errorf("the last line, runes %d to %d, starts with %+v and ends with %+v, %v wide", last.Start, last.End, head, tail, last.Width)
+	}
+}
+
 func TestColorEmoji(t *testing.T) {
 	if runtime.GOOS != "windows" && runtime.GOOS != "darwin" {
 		t.Skip("emoji fonts vary")
