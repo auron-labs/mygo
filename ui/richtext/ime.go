@@ -111,7 +111,7 @@ func (v *view) ReplaceText(r *ui.TextInputRange, s string) {
 	// As typed text goes in.
 	s = normalizeNewlines(s)
 	switch {
-	case r == nil && v.compose != "":
+	case r == nil && (v.compose != "" || v.composing):
 		v.compose = ""
 		v.joinStep()
 		v.replace(v.caret, v.caret, s)
@@ -141,6 +141,9 @@ func (v *view) ReplaceText(r *ui.TextInputRange, s string) {
 func (v *view) SetMarkedText(r *ui.TextInputRange, s string, selected ui.TextInputRange) {
 	v.sync()
 	if v.opts.ReadOnly {
+		return
+	}
+	if s == "" && r == nil && v.compose == "" && !v.composing {
 		return
 	}
 	if v.compose == "" || r != nil {

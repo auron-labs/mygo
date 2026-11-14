@@ -482,6 +482,90 @@ func TestRichTextReplaceCRLF(t *testing.T) {
 	}
 }
 
+// TestRichTextSetMarkedEmpty checks that SetMarkedText with an empty string
+// and nil range from idle is a no-op (leaving selection and undo intact), and
+// that clearing preedit before UnmarkText and ReplaceText (GTK commit order)
+// joins the selection-replacement undo step.
+func TestRichTextSetMarkedEmpty(t *testing.T) {
+	checkCleared := func(t *testing.T, v *view, label string) {
+		t.Helper()
+		if v.composing || v.compose != "" || v.composeCaret != 0 || v.composeSelected != (ui.TextInputRange{}) {
+			t.Fatalf("%s: composition state not cleared: composing=%v compose=%q caret=%d sel=%+v",
+				label, v.composing, v.compose, v.composeCaret, v.composeSelected)
+		}
+		if mr, marked := v.MarkedRange(); marked {
+			t.Fatalf("%s: MarkedRange() = %+v, true; want false", label, mr)
+		}
+	}
+
+	t.Run("idle", func(t *testing.T) {
+		doc := NewDocument(Text{})
+		tt, _ := richTester(t, doc)
+		typeRunes(tt, "hello")
+		v := doc.shownIn.Value()
+		v.SetMarkedText(nil, "", ui.TextInputRange{})
+		tt.Frame()
+		checkCleared(t, v, "idle")
+		if got := doc.Text().String(); got != "hello" {
+			t.Fatalf("text = %q, want %q", got, "hello")
+		}
+		tt.Key(ui.Cmd, ui.KeyZ)
+		if got := doc.Text().String(); got != "" {
+			t.Fatalf("after one undo = %q, want empty", got)
+		}
+	})
+
+	t.Run("idle with active selection", func(t *testing.T) {
+		doc := NewDocument(Text{})
+		tt, _ := richTester(t, doc)
+		typeRunes(tt, "hello")
+		doc.SetSelection(1, 4)
+		tt.Frame()
+		v := doc.shownIn.Value()
+		v.SetMarkedText(nil, "", ui.TextInputRange{})
+		tt.Frame()
+		checkCleared(t, v, "idle with active selection")
+		if got := doc.Text().String(); got != "hello" {
+			t.Fatalf("text = %q, want %q", got, "hello")
+		}
+		if a, c := doc.Selection(); a != 1 || c != 4 {
+			t.Fatalf("selection = (%d, %d), want (1, 4)", a, c)
+		}
+		tt.Key(ui.Cmd, ui.KeyZ)
+		if got := doc.Text().String(); got != "" {
+			t.Fatalf("after one undo = %q, want empty", got)
+		}
+	})
+
+	t.Run("GTK commit order", func(t *testing.T) {
+		doc := NewDocument(Text{})
+		tt, _ := richTester(t, doc)
+		typeRunes(tt, "hello")
+		doc.SetSelection(1, 4)
+		tt.Frame()
+		v := doc.shownIn.Value()
+		v.SetMarkedText(nil, "ni", ui.TextInputRange{Start: 2, End: 2})
+		v.SetMarkedText(nil, "", ui.TextInputRange{})
+		v.UnmarkText()
+		v.ReplaceText(nil, "你")
+		tt.Frame()
+		checkCleared(t, v, "GTK commit order")
+		if got := doc.Text().String(); got != "h你o" {
+			t.Fatalf("text = %q, want %q", got, "h你o")
+		}
+		if a, c := doc.Selection(); a != 2 || c != 2 {
+			t.Fatalf("selection = (%d, %d), want (2, 2)", a, c)
+		}
+		tt.Key(ui.Cmd, ui.KeyZ)
+		if got := doc.Text().String(); got != "hello" {
+			t.Fatalf("after one undo = %q, want %q", got, "hello")
+		}
+		if a, c := doc.Selection(); a != 1 || c != 4 {
+			t.Fatalf("after one undo selection = (%d, %d), want (1, 4)", a, c)
+		}
+	})
+}
+
 // TestRichTextEnterAtCheckedTask checks that Enter at the start of a
 // checked task keeps it checked, with an empty item above, as Notes.
 func TestRichTextEnterAtCheckedTask(t *testing.T) {
