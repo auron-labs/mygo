@@ -1175,3 +1175,77 @@ func TestTallEditorInScroll(t *testing.T) {
 		t.Fatalf("scrolled down the text, the view shows no text (%d marked pixels)", ink)
 	}
 }
+
+// An editor as tall as its text, in a scroll container, lays out again
+// only the paragraphs the container shows when its theme or its font
+// changes, or when the app builds it anew, keeping the others' heights
+// (those of another font scaled) until they come into view; its height,
+// ContentHeight, stays what the text takes.
+func TestTallEditorNewLook(t *testing.T) {
+	paras := make([]Paragraph, 3000)
+	for i := range paras {
+		paras[i] = para(fmt.Sprintf("Paragraph %d, long enough to wrap in a window this narrow at times.", i))
+	}
+	doc := NewDocument(TextOf(paras...))
+	dark := &Theme{Text: ui.Hex("#eeeeee")}
+	var th *Theme
+	size, tree := float32(14), 0
+	tt := ui.NewTester(func(c *ui.Context) {
+		c.Key(fmt.Sprint("tree", tree))
+		ui.Scroll(c).Fill().Children(func() {
+			ed := Editor(c, doc, EditorOptions{NoScrollbar: true, Theme: th, Font: ui.Font{Size: size}}).FillWidth()
+			h, ok := doc.ContentHeight()
+			if !ok {
+				h = 3000 * 60
+			}
+			ed.Height(h)
+		})
+	}, 500, 400)
+	tt.Frame()
+	tt.Frame()
+	v := doc.shownIn.Value()
+	tall, _ := doc.ContentHeight()
+	if v.laid < len(paras) || tall < 3000*14 {
+		t.Fatalf("the first frames laid out %d of %d paragraphs, %v tall", v.laid, len(paras), tall)
+	}
+	shows := func(what string) {
+		t.Helper()
+		v := doc.shownIn.Value()
+		if v.laid > 100 {
+			t.Fatalf("%s: %d paragraphs laid out again", what, v.laid)
+		}
+	}
+	th = dark
+	tt.Frame()
+	shows("another theme")
+	if h, _ := doc.ContentHeight(); h != tall {
+		t.Fatalf("another theme: %v tall, was %v", h, tall)
+	}
+	tree++
+	tt.Frame()
+	if doc.shownIn.Value() == v {
+		t.Fatal("the tree built anew kept its editor")
+	}
+	shows("an editor built anew")
+	if h, _ := doc.ContentHeight(); h != tall {
+		t.Fatalf("an editor built anew: %v tall, was %v", h, tall)
+	}
+	size = 21
+	tt.Frame()
+	shows("another font")
+	if h, _ := doc.ContentHeight(); h < tall*1.3 {
+		t.Fatalf("a larger font: %v tall, was %v", h, tall)
+	}
+	tt.Wheel(250, 200, 0, 20000)
+	tt.Advance(time.Second)
+	v = doc.shownIn.Value()
+	far := 0
+	for i := 300; i < len(v.paras); i++ {
+		if v.paras[i].layout != nil {
+			far++
+		}
+	}
+	if far == 0 || v.laid > 300 {
+		t.Fatalf("scrolled down the text, %d paragraphs there laid out, %d in all", far, v.laid)
+	}
+}

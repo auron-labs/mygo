@@ -141,7 +141,12 @@ type view struct {
 	laidLook   lookKey
 	padX, padY float32
 	rect       ui.Rect
-	scroll     float64
+	// clip is the part of the element the painter's clip showed in the
+	// last paint, from its top, while clipped is true: an editor as tall
+	// as its text, in a scroll container, shows a window of it.
+	clip    [2]float32
+	clipped bool
+	scroll  float64
 	// The view keeps its place by paragraph anchor: its top is anchorOff
 	// below the anchor's, or, while anchorText, the view keeps the
 	// anchor's first line where it was when its text was at anchorY in
@@ -261,6 +266,9 @@ func build(c *ui.Context, doc *Document, options []EditorOptions, styled bool) u
 		doc.lock()
 		v.selAnchor, v.caret = doc.anchor, doc.caret
 		v.selVersion = doc.selVersion
+		if was := doc.shownIn.Value(); was != nil && was.doc == doc && was.version == doc.version {
+			v.heightsOf(was)
+		}
 		doc.mu.Unlock()
 	}
 	// the editor built last shows the document for what the app reads
@@ -345,6 +353,42 @@ func (v *view) setLook(t *ui.Theme, styled bool) {
 	} else {
 		v.padX, v.padY = 0, 0
 	}
+}
+
+// ContentHeight returns how tall the text is in the editor showing the
+// document, in DIPs, with the room around it: the paragraphs laid out
+// measured, the others as tall as they were when last laid out, or
+// estimated. An app that sizes an editor to its text, in a scroll
+// container of its own, sizes it to this. ok is false until an editor
+// showed the document, as in the first frame.
+//
+// Call it on the main thread, as the view builds.
+func (d *Document) ContentHeight() (h float32, ok bool) {
+	d.lock()
+	v := d.shownIn.Value()
+	d.mu.Unlock()
+	if v == nil || v.doc != d || v.width <= 0 {
+		return 0, false
+	}
+	v.sync()
+	v.layout(v.width, v.viewH)
+	return float32(v.hs.top(len(v.paras))) + 2*v.padY, true
+}
+
+// heightsOf starts a new editor of a document from the heights of the
+// paragraphs the editor built before it measured, as an app that builds
+// its tree anew for another theme builds its editor: the new one lays out
+// what shows, not every paragraph again, which for an editor as tall as
+// a long text is all of them. The layouts are made anew, in its look.
+func (v *view) heightsOf(was *view) {
+	v.shown, v.version = was.shown, was.version
+	v.paras = make([]paraView, len(was.paras))
+	for i, pv := range was.paras {
+		v.paras[i] = paraView{h: pv.h, space: pv.space}
+	}
+	v.width, v.viewH, v.laidLook = was.width, was.viewH, was.laidLook
+	v.clip, v.clipped = was.clip, was.clipped
+	v.resetHeights()
 }
 
 // sync gets the editor in step with its document: the paragraphs that
@@ -789,6 +833,22 @@ func (v *view) paraLayout(p int) *paraView {
 	return pv
 }
 
+// sized returns paragraph p with its height: laid out, unless it has a
+// height but no layout and is out of what the painter's clip shows,
+// where its height is enough. An editor as tall as its text has every
+// paragraph in its view; what is out of the clip is laid out as it comes
+// into it.
+func (v *view) sized(p int) *paraView {
+	pv := &v.paras[p]
+	if pv.layout == nil && pv.h > 0 && v.clipped {
+		lo, hi := v.scroll+float64(v.clip[0]), v.scroll+float64(v.clip[1])
+		if v.hs.top(p+1) < lo || v.hs.top(p) > hi {
+			return pv
+		}
+	}
+	return v.paraLayout(p)
+}
+
 // maxLaid is how many paragraphs keep their layouts out of view.
 const maxLaid = 512
 
@@ -937,10 +997,24 @@ func (v *view) anchorCaret() {
 // the caret is in when it is to be revealed.
 func (v *view) layout(w, h float32) {
 	if key := v.lookKey(); w != v.width || key != v.laidLook {
-		// Another width, font or theme: every paragraph anew.
+		// Another width, font or theme: every paragraph anew. At the same
+		// width the heights are kept, those of another font scaled to it,
+		// until each paragraph is laid out again: those in view at once, the
+		// others as they come into view (sized), so that an editor as tall
+		// as a long text changes its theme or its font in the time it takes
+		// to lay out what shows.
+		keep := w == v.width && v.width > 0
+		scale := float32(1)
+		if was := v.laidLook.base.Size; keep && was > 0 && key.base.Size != was {
+			scale = key.base.Size / was
+		}
 		v.laidLook = key
 		for i := range v.paras {
-			v.paras[i] = paraView{}
+			if keep {
+				v.paras[i] = paraView{h: v.paras[i].h * scale, space: v.paras[i].space * scale}
+			} else {
+				v.paras[i] = paraView{}
+			}
 		}
 		v.laid = 0
 		v.width = w
@@ -981,7 +1055,7 @@ func (v *view) layout(w, h float32) {
 func (v *view) place(h float32) {
 	n := len(v.paras)
 	v.anchor = max(0, min(v.anchor, n-1))
-	v.paraLayout(v.anchor)
+	v.sized(v.anchor)
 	// top is where the view's top is in the content. Kept by the anchor's
 	// text, it moves as much as that text did since it was anchored, which
 	// is nothing at all when nothing moved it.
@@ -993,13 +1067,13 @@ func (v *view) place(h float32) {
 	v.first = v.anchor
 	for v.first > 0 && top()-v.hs.top(v.first) < 0 {
 		v.first--
-		v.paraLayout(v.first)
+		v.sized(v.first)
 	}
 	v.setScroll(max(0, top()))
 	y := v.hs.top(v.first)
 	p := v.first
 	for ; p < n; p++ {
-		y += float64(v.paraLayout(p).h)
+		y += float64(v.sized(p).h)
 		if y >= v.scroll+float64(h) {
 			break
 		}
@@ -1189,7 +1263,7 @@ func (v *view) boxes(out []ParagraphBox) []ParagraphBox {
 	// from the start of the text, each cost as much as the text is long.
 	ps := v.shown.paraStart(v.first)
 	for i := v.first; i <= v.last && i < len(v.paras); i, ps = i+1, ps+v.para(i).n+1 {
-		pv := v.paraLayout(i)
+		pv := v.sized(i)
 		_, y := v.origin(i)
 		out = append(out, ParagraphBox{Index: i, Start: ps, Top: v.padY + float32(y-v.scroll), Height: pv.h - pv.space})
 	}

@@ -13,6 +13,14 @@ import (
 func (v *view) paint(p *ui.Painter, r ui.Rect) {
 	v.rect = r
 	w, h := max(r.W-2*v.padX, 1), max(r.H-2*v.padY, 1)
+	// What of the text the clip shows, with a screen more above and below
+	// it, laid out ahead of a scroll.
+	if vis := p.Visible(); vis.H < h {
+		top := vis.Y - (r.Y + v.padY)
+		v.clip, v.clipped = [2]float32{top - vis.H, top + 2*vis.H}, true
+	} else {
+		v.clipped = false
+	}
 	v.layout(w, h)
 	ox, oy := r.X+v.padX, r.Y+v.padY
 	look := &v.look
