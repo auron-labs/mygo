@@ -18,6 +18,9 @@ func (v *view) input(ev ui.InputEvent) bool {
 	if ev.Kind == ui.InputKeyDown && v.opts.OnKey != nil && v.opts.OnKey(ev.Key, ev.Mods) {
 		return true
 	}
+	if ev.Kind == ui.InputCommand && v.opts.OnCommand != nil && v.opts.OnCommand(ev.Text) {
+		return true
+	}
 	v.sync()
 	defer v.publish()
 	switch ev.Kind {

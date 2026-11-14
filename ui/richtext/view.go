@@ -52,6 +52,12 @@ type EditorOptions struct {
 	// takes the arrows, Enter and Escape: true takes the key, and the
 	// editor does nothing with it.
 	OnKey func(key ui.Key, mods ui.Modifiers) bool
+	// OnCommand is asked about an edit command of the menus ("paste",
+	// "copy", "cut", "selectAll", "undo"...) before the editor does it,
+	// as OnKey is about a key: a Mac's menu bar takes ⌘V and sends
+	// "paste", which OnKey never sees. true takes the command, and the
+	// editor does nothing with it.
+	OnCommand func(name string) bool
 	// Spans is given the spans paragraph p (from 0) of style is drawn as
 	// and returns them as they are to be drawn: split, colored or spaced
 	// otherwise, their text the same, as an app colors a block of code by

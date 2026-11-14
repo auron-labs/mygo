@@ -3,6 +3,7 @@ package richtext
 import (
 	"bytes"
 	"fmt"
+	"github.com/egoist/mygo/transfer"
 	"runtime"
 	"slices"
 	"strings"
@@ -869,6 +870,45 @@ func TestRichTextOnKey(t *testing.T) {
 	tt2.Frame()
 	if _, c := doc.Selection(); c != 1 || doc.Text().String() != "ONE\ntwo" {
 		t.Fatalf("what OnKey did was undone: caret %d, %q", c, doc.Text().String())
+	}
+}
+
+// OnCommand is asked about an edit command of the menus first, as a Mac's menu bar sends ⌘V: a command it takes does
+// nothing in the editor, and what it does to the document is kept; one it lets go is the editor's as before.
+func TestRichTextOnCommand(t *testing.T) {
+	doc := NewDocument(NewText("one two"))
+	var asked []string
+	tt := ui.NewTester(func(c *ui.Context) {
+		Editor(c, doc, EditorOptions{OnCommand: func(name string) bool {
+			asked = append(asked, name)
+			if name != "paste" {
+				return false
+			}
+			doc.SetLink("https://example.com")
+			return true
+		}}).Fill()
+	}, 500, 400)
+	tt.Press(10, 10)
+	tt.Release(10, 10)
+	tt.SetClipboardData(transfer.New(transfer.NewItem(transfer.Bytes(transfer.Text, []byte("https://example.com")))))
+	doc.SetSelection(0, 3)
+	tt.Frame()
+	tt.Command("paste")
+	tt.Frame()
+	if got := doc.Text().String(); got != "one two" {
+		t.Fatalf("a command taken by OnCommand was the editor's too: %q", got)
+	}
+	if link := doc.Text().AttributesAt(1).Link; link != "https://example.com" {
+		t.Fatalf("what OnCommand did was undone: link %q", link)
+	}
+	doc.SetSelection(0, 0)
+	tt.Frame()
+	tt.Command("selectAll")
+	if a, c := doc.Selection(); a != 0 || c != 7 {
+		t.Fatalf("a command let go is not the editor's: selection %d-%d", a, c)
+	}
+	if len(asked) != 2 || asked[0] != "paste" || asked[1] != "selectAll" {
+		t.Fatalf("asked about %v", asked)
 	}
 }
 
