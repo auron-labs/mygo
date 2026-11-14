@@ -1,7 +1,7 @@
 package richtext
 
 import (
-	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode"
@@ -340,26 +340,29 @@ func readsAs(s string, runs []Run) bool {
 		}
 		got = append(p.Runs, Run{})[:len(p.Runs)]
 	}
-	return markKey(got) == markKey(runs)
+	gc, gm := markSeq(got)
+	rc, rm := markSeq(runs)
+	return slices.Equal(gc, rc) && slices.Equal(gm, rm)
 }
 
-// markKey returns the text of runs with the marks of each character
-// Markdown keeps, but none of whitespace outside code, nor of spaces
-// ending the paragraph, which it does not show.
-func markKey(runs []Run) string {
-	var b strings.Builder
-	type marks struct {
-		bold, italic, strike, under, code bool
-		link                              string
-		at                                Attachment
-	}
+// runMarks are the marks of a character that Markdown keeps.
+type runMarks struct {
+	bold, italic, strike, under, code bool
+	link, atName, atURL               string
+}
+
+// markSeq returns the characters of runs and the marks of each that
+// Markdown keeps, but none of whitespace outside code, nor the spaces
+// ending the paragraph, which it does not show. It is compared, not
+// printed: a paragraph's characters are many.
+func markSeq(runs []Run) ([]rune, []runMarks) {
 	var all []rune
-	var ms []marks
+	var ms []runMarks
 	for _, r := range runs {
 		a := r.Attributes
-		m := marks{a.Bold(), a.Italic, a.Strikethrough, a.Underline, a.Code, a.Link, Attachment{}}
+		m := runMarks{bold: a.Bold(), italic: a.Italic, strike: a.Strikethrough, under: a.Underline, code: a.Code, link: a.Link}
 		if a.Attachment != nil {
-			m.at = Attachment{Name: a.Attachment.Name, URL: a.Attachment.URL}
+			m.atName, m.atURL = a.Attachment.Name, a.Attachment.URL
 		}
 		for _, c := range r.Text {
 			all = append(all, c)
@@ -370,14 +373,13 @@ func markKey(runs []Run) string {
 	for end > 0 && all[end-1] == ' ' && !ms[end-1].code {
 		end--
 	}
-	for i, c := range all[:end] {
-		m := ms[i]
-		if unicode.IsSpace(c) && !m.code {
-			m = marks{}
+	all, ms = all[:end], ms[:end]
+	for i, c := range all {
+		if unicode.IsSpace(c) && !ms[i].code {
+			ms[i] = runMarks{}
 		}
-		fmt.Fprintf(&b, "%c%v\x00", c, m)
 	}
-	return b.String()
+	return all, ms
 }
 
 // codeSpan returns s as a code span, fenced by more backticks than any
