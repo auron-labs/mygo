@@ -16,6 +16,7 @@ import (
 	"errors"
 	"fmt"
 	"image"
+	"log"
 	"os"
 	"sync"
 	"syscall"
@@ -438,6 +439,12 @@ const (
 
 // noPartial draws every frame whole, for measurements that compare.
 var noPartial = os.Getenv("MYGO_PARTIAL") == "0"
+
+// logAtlases, with MYGO_ATLAS_LOG set, logs the atlas generations each
+// frame was painted with and those it uploads. They differ when the shared
+// atlases were repacked in between, as by another window's frame, and the
+// frame then draws its glyphs from the wrong places.
+var logAtlases = os.Getenv("MYGO_ATLAS_LOG") != ""
 
 // New creates a renderer drawing into the window hwnd, on the GPU or, when
 // there is none, with Windows' software rasterizer (WARP). Its frames are
@@ -1096,6 +1103,13 @@ func (r *Renderer) drawFrame(s *scene.Scene) (bool, error) {
 			r.redrew = redrewNothing
 			return false, nil
 		}
+	}
+	if logAtlases {
+		now, note := [2]uint64{s.MaskAtlas.Generation(), s.ColorAtlas.Generation()}, ""
+		if now != s.Generations {
+			note = ": repacked since painted"
+		}
+		log.Printf("mygo: atlases: renderer %p, %dx%d at scale %g, painted with generations %v, uploading %v%s", r, s.Width, s.Height, s.Scale, s.Generations, now, note)
 	}
 	if err := r.syncAtlas(&r.mask, s.MaskAtlas, formatR8Unorm); err != nil {
 		return false, err
