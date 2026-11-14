@@ -555,6 +555,119 @@ func TestParserReviewBracketMathNeverCloses(t *testing.T) {
 	}
 }
 
+// A childless list item spans its own marker line through that line's
+// end, rather than truncating Block.End to Start+1 inside multi-byte
+// markers such as "1. " or "10. ".
+func TestParserReviewEmptyItemEndsAtLineEnd(t *testing.T) {
+	for _, tt := range []struct {
+		src        string
+		start, end int
+	}{
+		{"- \n\n", 0, 2},
+		{"-\t\n\n", 0, 2},
+		{"1. \n\n", 0, 3},
+		{"10. \n\n", 0, 4},
+		{"1. \n2. a\n", 0, 3},
+		{"1. a\n2. \n\n", 5, 8},
+		{"1. a\n2. \n3. b\n", 5, 8},
+		{"- - \n\n", 2, 4},
+		{"1. ", 0, 3},
+		{"- \r\n\n", 0, 2},
+		{"-   \n\n", 0, 4},
+		{"-\n", 0, 1},
+		{"1.\n", 0, 2},
+	} {
+		for _, ext := range []Extensions{0, Default} {
+			d := New(ext)
+			d.Set(tt.src)
+			found := false
+			for i := 1; i < d.Len(); i++ {
+				b := d.Block(i)
+				if b.Kind != Item || b.Start != tt.start {
+					continue
+				}
+				found = true
+				if b.End != tt.end {
+					t.Errorf("ext=%v %q: item span [%d,%d), want [%d,%d)", ext, tt.src, b.Start, b.End, tt.start, tt.end)
+				}
+				if p := d.Block(b.Parent); p.Kind == List && p.End < b.End {
+					t.Errorf("ext=%v %q: parent list End=%d < item End=%d", ext, tt.src, p.End, b.End)
+				}
+			}
+			if !found {
+				t.Errorf("ext=%v %q: no item starting at %d", ext, tt.src, tt.start)
+			}
+		}
+	}
+}
+
+// Partial and streaming parses (where d.src holds bytes past end) must
+// never scan past end when finalizing a childless list item.
+func TestParserReviewEmptyItemEndsAtPartialEnd(t *testing.T) {
+	for _, ext := range []Extensions{0, Default} {
+		// Streaming trims the incomplete trailing UTF-8 sequence at end=5
+		// ("100. "), while d.src still contains the trailing bytes.
+		d := New(ext)
+		d.SetStreaming(true)
+		d.Set("100. \xe2\x82")
+		if d.cut != 5 {
+			t.Fatalf("ext=%v streaming cut=%d, want 5", ext, d.cut)
+		}
+		found := false
+		for i := 1; i < d.Len(); i++ {
+			b := d.Block(i)
+			if b.Kind != Item {
+				continue
+			}
+			found = true
+			if b.Start != 0 || b.End != 5 {
+				t.Errorf("ext=%v streaming: item span [%d,%d), want [0,5)", ext, b.Start, b.End)
+			}
+			if p := d.Block(b.Parent); p.Kind != List || p.End > 5 || p.End < b.End {
+				t.Errorf("ext=%v streaming: parent list span [%d,%d) exceeds cut 5", ext, p.Start, p.End)
+			}
+		}
+		if !found {
+			t.Errorf("ext=%v streaming: no item found", ext)
+		}
+	}
+
+	for _, tt := range []struct {
+		src         string
+		end         int
+		start, want int
+	}{
+		{"100. \xe2\x82", 5, 0, 5},
+		{"100. \xe2\x82", 4, 0, 4},
+		{"10. \xe2\x82", 4, 0, 4},
+		{"- \xe2\x82", 2, 0, 2},
+		{"1. a\n2. \xe2\x82", 8, 5, 8},
+	} {
+		for _, ext := range []Extensions{0, Default} {
+			d := New(ext)
+			d.src = tt.src
+			d.parse(0, tt.end, nil)
+			found := false
+			for i := 1; i < d.Len(); i++ {
+				b := d.Block(i)
+				if b.Kind != Item || b.Start != tt.start {
+					continue
+				}
+				found = true
+				if b.End != tt.want || b.End > tt.end {
+					t.Errorf("ext=%v %q end=%d: item span [%d,%d), want [%d,%d)", ext, tt.src, tt.end, b.Start, b.End, tt.start, tt.want)
+				}
+				if p := d.Block(b.Parent); p.Kind != List || p.End > tt.end || p.End < b.End {
+					t.Errorf("ext=%v %q end=%d: parent list End=%d, item End=%d", ext, tt.src, tt.end, p.End, b.End)
+				}
+			}
+			if !found {
+				t.Errorf("ext=%v %q end=%d: no item starting at %d", ext, tt.src, tt.end, tt.start)
+			}
+		}
+	}
+}
+
 // A closed math block's End includes its closing delimiter line rather
 // than stopping at its last content segment.
 func TestParserReviewMathBlockEnd(t *testing.T) {
