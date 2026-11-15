@@ -721,10 +721,14 @@ func (h *windowHost) retryLater() {
 // glyph atlases, which every window shares, moved or forgot the glyphs it
 // draws since it was painted, as another window making room in them does
 // (System.MakeRoom), as repaintParts tells: its text would show what took
-// their places (#1920). Within a frame, runFrame builds none.
+// their places (#1920); or where it drew masks for itself alone
+// (text.System.Mask, rt.transient), which another window's next frame
+// draws over in the atlases they share. Within a frame, runFrame builds
+// none.
 func (h *windowHost) capture() (int, int, []byte) {
-	if h.last == nil || h.rt.held || h.waitsOutOfSight() || atlasGenerations(h.last) != h.rt.atlases {
-		h.rt.runFrame()
+	rt := h.rt
+	if h.last == nil || rt.held || h.waitsOutOfSight() || atlasGenerations(h.last) != rt.atlases || rt.transient || rt.partTransient > 0 {
+		rt.runFrame()
 	}
 	s := h.last
 	if s == nil {

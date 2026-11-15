@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/egoist/mygo/internal/platform"
+	"github.com/egoist/mygo/internal/raster"
 	"github.com/egoist/mygo/internal/surface"
 )
 
@@ -239,5 +240,36 @@ func TestOccludedHoldsWithAccessibility(t *testing.T) {
 	o.frame()
 	if o.shows() != "1" {
 		t.Errorf("accessibility reads %q, not what the window shows now", o.shows())
+	}
+}
+
+// TestCaptureAfterAnotherWindowsMasks checks that capturing a window whose
+// last frame drew masks for the first time shows them, though another
+// window's frame drew its own masks over them in the atlas both share.
+func TestCaptureAfterAnotherWindowsMasks(t *testing.T) {
+	shape := func(points ...float32) func(*context) {
+		return func(c *context) {
+			coreBox(c).Size(200, 100).Background(RGB(255, 255, 255)).Draw(func(p *Painter, r Rect) {
+				var path Path
+				path.MoveTo(r.X+points[0], r.Y+points[1])
+				for i := 2; i < len(points); i += 2 {
+					path.LineTo(r.X+points[i], r.Y+points[i+1])
+				}
+				p.FillPath(path.Close(), RGB(0, 0, 0))
+			})
+		}
+	}
+	a := newOccludedHost(t, false)
+	a.rt = newRuntime(shape(17, 5, 61, 33, 11, 47), a.windowHost)
+	b := newOccludedHost(t, false)
+	b.rt = newRuntime(shape(4, 4, 83, 6, 79, 91, 7, 71), b.windowHost)
+	a.frame()
+	var img raster.Image
+	img.Resize(a.last.Width, a.last.Height)
+	raster.Render(&img, a.last)
+	want := img.RGBA()
+	b.frame()
+	if _, _, got := a.capture(); !bytes.Equal(got, want) {
+		t.Error("the capture shows the other window's shape where the window drew its own")
 	}
 }
