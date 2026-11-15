@@ -698,9 +698,10 @@ func (h *windowHost) retryLater() {
 
 // capture renders the last frame in memory: built now where none was yet,
 // or where one waits for the window to show (holdFrame, waitsOutOfSight),
-// so that a window out of sight shows what it shows now.
+// so that a window out of sight shows what it shows now, or where the
+// atlases it draws from moved since (atlasesMoved).
 func (h *windowHost) capture() (int, int, []byte) {
-	if h.last == nil || h.rt.held || h.waitsOutOfSight() {
+	if h.last == nil || h.rt.held || h.waitsOutOfSight() || h.atlasesMoved() {
 		h.rt.runFrame()
 	}
 	s := h.last
@@ -711,6 +712,17 @@ func (h *windowHost) capture() (int, int, []byte) {
 	img.Resize(s.Width, s.Height)
 	raster.Render(&img, s)
 	return img.W, img.H, img.RGBA()
+}
+
+// atlasesMoved reports whether the last frame may draw from places in the
+// glyph atlases, which every window shares, that hold something else now:
+// another window making room in them moves what they hold, and its next
+// frame draws over the masks the last frame drew for itself alone
+// (text.System.Mask). The GPU had them as the frame showed; drawing the
+// frame in memory again reads them now.
+func (h *windowHost) atlasesMoved() bool {
+	rt := h.rt
+	return atlasGenerations(h.last) != h.last.Generations || rt.transient || rt.partTransient > 0
 }
 
 // waitsOutOfSight reports whether nothing of the window shows while a
