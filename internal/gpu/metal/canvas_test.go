@@ -3,6 +3,7 @@
 package metal
 
 import (
+	"bytes"
 	"runtime"
 	"testing"
 
@@ -61,4 +62,41 @@ func TestTransientCanvas(t *testing.T) {
 	}
 	runtime.KeepAlive(layer)
 	runtime.KeepAlive(kept)
+}
+
+// Once the window is idle, a frame shows the canvases as they were drawn,
+// though their scenes no longer draw that, as when the atlases moved the
+// glyphs they point at; a transient canvas's texture goes.
+func TestIdleTrimKeepsCanvases(t *testing.T) {
+	r, err := newRenderer()
+	if err != nil {
+		t.Skip("no Metal:", err)
+	}
+	defer r.Release()
+	s := gputest.CanvasScene()
+	layer := scene.NewCanvas(4, 4)
+	layer.Transient = true
+	s.Canvases = append(s.Canvases, layer)
+	want, err := r.renderOffscreen(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Canvases = nil
+	for _, op := range s.Ops {
+		if op.Image != nil && op.Image.Scene != nil {
+			op.Image.Scene.Ops = nil
+		}
+	}
+	pool(func() { r.releaseTextures(false) })
+	if r.canvases[layer.ID()] != nil {
+		t.Error("an idle trim kept a transient canvas's texture")
+	}
+	got, err := r.renderOffscreen(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Error("after an idle trim, the canvases were drawn again from their scenes")
+	}
+	runtime.KeepAlive(layer)
 }
