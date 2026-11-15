@@ -1976,9 +1976,14 @@ func (r *Renderer) fit(w, h int, scale float64) (changed bool) {
 	return true
 }
 
-// releaseTextures frees what the GPU's frames use, once the window is
-// idle. The next frame makes them again, uploading the atlases whole.
-func (r *Renderer) releaseTextures() {
+// releaseTextures frees what the GPU's frames use, all of it or, once the
+// window is idle, all but the textures of canvases still about that frames
+// do not draw anew (scene.Image.Transient): nothing can make those again,
+// as a canvas's scene draws what it held only in the frame that painted
+// it, while the atlases hold its glyphs and masks where they were and the
+// canvases it shows hold what they did. The next frame makes the rest
+// again, uploading the atlases whole.
+func (r *Renderer) releaseTextures(all bool) {
 	release(&r.mask.tex)
 	release(&r.color.tex)
 	for key, t := range r.images {
@@ -1986,8 +1991,11 @@ func (r *Renderer) releaseTextures() {
 		delete(r.images, key)
 	}
 	for key, t := range r.canvases {
-		release(&t.tex)
 		t.drawState.release()
+		if c := t.canvas.Value(); !all && c != nil && !c.Transient {
+			continue
+		}
+		release(&t.tex)
 		delete(r.canvases, key)
 	}
 	r.drawState.release()
@@ -2063,7 +2071,7 @@ func (r *Renderer) trim() {
 	r.pre.drain()
 	pool(func() {
 		r.waitLast()
-		r.releaseTextures()
+		r.releaseTextures(false)
 		r.ages.Reset()
 		r.diff.Release()
 		tx := class("CATransaction")
@@ -2131,7 +2139,7 @@ func (r *Renderer) Release() {
 			send(tx, "commit")
 			release(&r.layer)
 		}
-		r.releaseTextures()
+		r.releaseTextures(true)
 		r.releaseVideo()
 		r.ages.Reset()
 		release(&r.empty)

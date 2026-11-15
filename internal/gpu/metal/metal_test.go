@@ -237,7 +237,7 @@ func TestDrawingResourcesOnDemand(t *testing.T) {
 			t.Fatal(err)
 		}
 		gputest.Compare(t, "metal-on-demand", pix, s.Width*4, s)
-		pool(r.releaseTextures)
+		pool(func() { r.releaseTextures(false) })
 	}
 }
 
