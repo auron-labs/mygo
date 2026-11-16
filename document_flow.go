@@ -347,9 +347,9 @@ func windowClosing(e *CloseEvent) {
 	}()
 }
 
-// closeAlone closes b, whose window shows other documents too, once it
-// is saved or its changes are answered for; the window stays open. Main
-// thread only.
+// closeAlone closes b, whose window shows other documents too or is kept
+// without any (DocumentsOptions.KeepWindow), once it is saved or its
+// changes are answered for; the window stays open. Main thread only.
 func (b *docBase) closeAlone() {
 	b.mu.Lock()
 	w := b.window
@@ -378,7 +378,8 @@ func (b *docBase) closeAlone() {
 
 // leaveWindow closes b, which leaves its window dw to its other
 // documents; dw shows the one after b, or else the one before, when it
-// showed b. Main thread only.
+// showed b. A window left without documents shows none, and no edited
+// state or file. Main thread only.
 func (b *docBase) leaveWindow(dw *docWindow) {
 	docRegistry.Lock()
 	i := slices.Index(dw.docs, b)
@@ -387,6 +388,7 @@ func (b *docBase) leaveWindow(dw *docWindow) {
 		return
 	}
 	dw.docs = slices.Delete(dw.docs, i, i+1)
+	empty := len(dw.docs) == 0
 	var next *docBase
 	if dw.selected == b {
 		dw.selected = nil
@@ -395,6 +397,15 @@ func (b *docBase) leaveWindow(dw *docWindow) {
 		}
 	}
 	docRegistry.Unlock()
+	if empty {
+		b.mu.Lock()
+		w := b.window
+		b.mu.Unlock()
+		if w != nil && !w.IsDestroyed() {
+			w.SetDocumentEdited(false)
+			w.SetRepresentedFile("")
+		}
+	}
 	b.windowClosed()
 	if next != nil {
 		next.selectNow()

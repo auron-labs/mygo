@@ -102,6 +102,10 @@ type DocumentsOptions[T any] struct {
 	// documents to open, or (macOS) when its Dock icon is clicked while
 	// it has no windows.
 	NoUntitled bool
+	// KeepWindow keeps a window open when its last document closes, for a
+	// window that shows something of its own without documents, as a home
+	// view. Otherwise closing a window's last document closes the window.
+	KeepWindow bool
 }
 
 // Documents opens, creates and keeps track of the documents of one kind,
@@ -159,6 +163,7 @@ func NewDocuments[T any](opts DocumentsOptions[T]) *Documents[T] {
 		autosaveDelay: opts.AutosaveDelay,
 		askOnQuit:     opts.AskOnQuit,
 		noUntitled:    opts.NoUntitled,
+		keepWindow:    opts.KeepWindow,
 		create: func(content any, name string) (*docBase, error) {
 			v, _ := content.(T)
 			return &ds.newDocument(v, name).docBase, nil
@@ -656,8 +661,9 @@ func (b *docBase) MoveTo(dir string) error { return b.moveTo(dir) }
 func (d *Document[T]) Duplicate() *Document[T] { return d.duplicate().ops.(*Document[T]) }
 
 // Close closes the document, asking to save it first when it must. A
-// document whose window shows others closes alone; else its window closes
-// with it.
+// document whose window shows others closes alone, as does one of a kind
+// that keeps its window (DocumentsOptions.KeepWindow); else its window
+// closes with it.
 func (b *docBase) Close() {
 	onMain(func() {
 		b.mu.Lock()
@@ -665,7 +671,7 @@ func (b *docBase) Close() {
 		b.mu.Unlock()
 		switch {
 		case w == nil:
-		case len(windowDocuments(w)) > 1:
+		case len(windowDocuments(w)) > 1 || b.kind.keepWindow:
 			b.closeAlone()
 		default:
 			w.close()
@@ -823,6 +829,7 @@ type docKindConfig struct {
 	autosaveDelay time.Duration
 	askOnQuit     bool
 	noUntitled    bool
+	keepWindow    bool
 	// create makes a document with content, untitled with name; read
 	// reads a content; empty is the content of a new document.
 	create func(content any, name string) (*docBase, error)

@@ -14,6 +14,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -809,6 +810,81 @@ func TestDocumentClosesAlone(t *testing.T) {
 	}
 	c.Close()
 	waitFor(t, "the window to close", func() bool { return w.IsDestroyed() && c.Window() == nil })
+}
+
+func TestDocumentKeepsItsWindow(t *testing.T) {
+	var shared *Window
+	ds := testDocs(t, DocumentsOptions[string]{Autosave: AutosaveOff, KeepWindow: true, Window: func(*Document[string]) *Window {
+		if shared == nil || shared.IsDestroyed() {
+			shared = NewWindow(WindowOptions{})
+		}
+		return shared
+	}})
+	t.Cleanup(func() {
+		if shared != nil && !shared.IsDestroyed() {
+			shared.Destroy()
+		}
+	})
+	a, _ := ds.Open(writeTemp(t, "a.txt", "a"))
+	w := a.Window()
+	var closed atomic.Bool
+	a.OnClosed(func() { closed.Store(true) })
+
+	roles := []MenuRole{RoleSave, RoleSaveAs, RoleDuplicate, RoleRename, RoleMoveTo, RoleRevert}
+	var items []*MenuItem
+	for _, r := range roles {
+		items = append(items, &MenuItem{ID: string(r), Role: r})
+	}
+	menu := NewMenu(items)
+	w.SetMenu(menu)
+	w.Focus()
+	enabled := func(want bool) func() bool {
+		return func() bool {
+			return onMainValue(func() bool {
+				for _, r := range roles {
+					if menu.ItemByID(string(r)).IsEnabled() != want {
+						return false
+					}
+				}
+				return true
+			})
+		}
+	}
+
+	a.Set("unsaved")
+	waitFor(t, "the File commands to be enabled", enabled(true))
+
+	asked := answer("Cancel")
+	a.Close()
+	waitFor(t, "the question", func() bool {
+		return len(asked.all()) == 1 && !onMainValue(func() bool { return a.closing })
+	})
+	if a.Window() != w || ds.ForWindow(w) != a || closed.Load() {
+		t.Fatal("Cancel closed the document")
+	}
+
+	asked = answer("Save")
+	a.Close()
+	waitFor(t, "a to close", closed.Load)
+	if len(asked.all()) != 1 {
+		t.Fatalf("asked %q, want one question", asked.all())
+	}
+	if w.IsDestroyed() || ds.ForWindow(w) != nil || len(ds.Documents()) != 0 || !fileIs(a.Path(), "unsaved") {
+		t.Fatalf("closing the last document: destroyed=%v shows %v, %d documents", w.IsDestroyed(), ds.ForWindow(w), len(ds.Documents()))
+	}
+	if onMainValue(w.IsDocumentEdited) {
+		t.Error("the empty window is still marked edited")
+	}
+	if !enabled(false)() {
+		t.Error("the File commands are enabled with no document")
+	}
+
+	b, _ := ds.Open(writeTemp(t, "b.txt", "b"))
+	if b.Window() != w || ds.ForWindow(w) != b {
+		t.Fatal("the next document did not open in the window kept")
+	}
+	w.Close()
+	waitFor(t, "the window to close", func() bool { return w.IsDestroyed() && b.Window() == nil })
 }
 
 func TestDocumentWindowClosesAll(t *testing.T) {
