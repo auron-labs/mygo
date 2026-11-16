@@ -1,0 +1,6 @@
+interface:
+  display_name: "Maintain a GitHub Fork"
+  short_description: "Replay upstream commits and keep local changes"
+  default_prompt: "$maintain-github-fork"
+policy:
+  allow_implicit_invocation: false

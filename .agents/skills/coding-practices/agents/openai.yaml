@@ -1,0 +1,6 @@
+interface:
+  display_name: "Coding Practices"
+  short_description: "Make code easy to locate, understand, and verify"
+  default_prompt: "$coding-practices"
+policy:
+  allow_implicit_invocation: true
