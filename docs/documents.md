@@ -72,6 +72,7 @@ go run ./cmd/mygo dev examples/documents
 | `AutosaveDelay` | how long after the last edit an autosave happens: 5 seconds |
 | `AskOnQuit` | asks to save at quit, rather than keeping the documents for the next launch |
 | `NoUntitled` | no untitled document when the app starts with nothing to open |
+| `KeepWindow` | keeps a [window of documents](#several-documents-in-a-window) open when its last document closes |
 
 Call `NewDocuments` before `App.Run`. When the app starts, it opens the
 files the app was started with, the documents a crash or a quit left with
@@ -154,6 +155,7 @@ and the File menu, `ForWindow` and the document service act on that one.
 ```go
 var projectWindow *mygo.Window
 
+KeepWindow: true, // the window shows a home view with no document
 Window: func(doc *mygo.Document[string]) *mygo.Window {
 	if projectWindow == nil || projectWindow.IsDestroyed() {
 		projectWindow = mygo.NewWindow(mygo.WindowOptions{Content: ui.View(app.view)})
@@ -172,7 +174,10 @@ Window: func(doc *mygo.Document[string]) *mygo.Window {
 
 `Close` closes a document alone, asking about it first where it must, and
 the window shows the one after it, or else the one before. The last
-document closes the window. Closing the window asks about its edited
+document closes the window. With `KeepWindow` the window stays open and
+shows no document, for an app that shows something of its own there, as
+a home view: `ForWindow` returns nil, and the File menu's document
+commands are disabled. Closing the window asks about its edited
 documents one after the other, each shown as it is asked about; Cancel
 keeps the window open with all of them. `RoleClose` closes the window: an
 app whose windows show several documents gives a menu item of its own
@@ -189,7 +194,7 @@ that closes the one shown.
 | `Rename(name)` | renames its file, in its folder; `""` asks |
 | `MoveTo(dir)` | moves its file to another folder; `""` asks |
 | `Revert()` | reads its file again, dropping its unsaved changes |
-| `Close()` | closes it, asking to save first where it must: alone, in a window that [shows others](#several-documents-in-a-window), else with its window |
+| `Close()` | closes it, asking to save first where it must: alone, in a window that [shows others](#several-documents-in-a-window) or is kept (`KeepWindow`), else with its window |
 
 Files are written as `NSDocument` and GIO write them: into a new file next
 to the document, flushed to the disk, which then replaces it, so that a
