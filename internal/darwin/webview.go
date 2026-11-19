@@ -503,7 +503,25 @@ func webViewMethods() []objc.MethodDef {
 			scrollWheel(w.host.surface, ev)
 		}),
 		method("rightMouseDown:", press(1)),
-		method("otherMouseDown:", press(2)),
+		method("otherMouseDown:", func(self id, cmd objc.SEL, ev id) {
+			w := theBackend.byWebView[self]
+			if w != nil && w.host != nil {
+				if n := sendInt(ev, "buttonNumber"); n == 3 || n == 4 {
+					// The side buttons go back and forward, as keys do,
+					// and are not the page's to hear: WebKit does
+					// nothing with them. Down and up together, as a
+					// swipe's are.
+					if s := w.host.surface; s != nil {
+						mods := eventMods(ev)
+						s.sideButton(platform.PointerDown, n == 3, mods)
+						s.sideButton(platform.PointerUp, n == 3, mods)
+					}
+					return
+				}
+				w.pressed(ev, 2)
+			}
+			sendSuper(self, "MyGoWebView", cmd, uintptr(ev))
+		}),
 		method("mouseMoved:", moved),
 		method("mouseEntered:", moved),
 		method("mouseExited:", exited),
