@@ -32,6 +32,22 @@ A mouse's back and forward buttons over a web view reach the surface as `KeyBack
 - Check: manual, on macOS: press a mouse's side buttons over a web view.
 - Upstream changes: prefer upstream's implementation where it does the same.
 
+## Windows placed at the origin
+
+`WindowOptions.Positioned` places a window at `X` and `Y` even when both are zero; without it a window at 0, 0 is centered. webar's bars sit at a display's top-left corner.
+
+- Paths: `window.go`, `mygo_test.go`, `docs/windows.md`
+- Check: `go test -run TestWindowPositionedAtOrigin .`
+- Upstream changes: port upstream's changes to window placement and keep `Positioned`; prefer upstream's API if it adds an equivalent.
+
+## Thin frameless windows on Windows
+
+A frameless window that cannot be resized, minimized or maximized is a `WS_POPUP` without caption or frame, so it can be thinner than a title bar (Windows keeps overlapped windows at least `SM_CYMIN` tall). webar's bars depend on it.
+
+- Paths: `internal/windows/window.go` (`styles`), `internal/windows/styles_test.go`
+- Check: `GOOS=windows go vet ./internal/windows`; on Windows, `go test -run TestFixedFramelessWindowIsAPopup ./internal/windows` and a 24px frameless window shows 24px tall.
+- Upstream changes: take upstream's changes to window styles and keep this case.
+
 ## Repository tooling
 
 Dependabot opens one grouped weekly pull request (`.github/dependabot.yml`), and the agent skills live in `.agents/skills` and `.claude/skills`.
