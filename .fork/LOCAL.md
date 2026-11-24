@@ -22,7 +22,7 @@ Metal keeps canvases' textures through an idle trim, a window paints again for a
 
 - Paths: `internal/gpu/metal/`, `internal/gpu/d3d11/d3d11.go`, `internal/scene/scene.go`, `ui/window.go`, `ui/occluded_test.go`
 - Check: `go test ./internal/gpu/... ./ui`
-- Upstream changes: prefer upstream's implementation where it fixes the same behaviour; drop the local one then.
+- Upstream changes: prefer upstream's implementation where it fixes the same behaviour; drop the local one then. `windowHost.capture` also builds a frame again when the last drew masks for itself alone (`rt.transient`, `rt.partTransient`), which upstream's atlas check does not cover; `TestCaptureAfterAnotherWindowsMasks` checks it.
 
 ## Web view side buttons on macOS
 
