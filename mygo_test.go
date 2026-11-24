@@ -296,6 +296,13 @@ func TestInputRegion(t *testing.T) {
 	}
 }
 
+func TestWindowPositionedAtOrigin(t *testing.T) {
+	_, fw := testWindow(t, WindowOptions{Positioned: true})
+	if o := fw.Opts; o.Center || o.X != 0 || o.Y != 0 {
+		t.Errorf("a Positioned window at 0,0 is centered (%v) or moved to %d,%d", o.Center, o.X, o.Y)
+	}
+}
+
 func TestWindowOptions(t *testing.T) {
 	parent, _ := testWindow(t, WindowOptions{})
 	_, fw := testWindow(t, WindowOptions{

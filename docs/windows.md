@@ -42,7 +42,8 @@ on the screen. Sizes and positions are in device-independent pixels.
 | `URL` | loaded once the window exists; `/` and other URLs without a scheme are pages of the [frontend](frontend.md#how-pages-load) |
 | `Content` | shows [native UI](ui/README.md) that MyGo draws, instead of a page |
 | `Width`, `Height` | the size of the window, or of what it shows with `UseContentSize` |
-| `X`, `Y` | the top-left corner; the window is centered when both are 0 |
+| `X`, `Y` | the top-left corner; the window is centered when both are 0, unless `Positioned` is set |
+| `Positioned` | place the window at `X` and `Y` even when both are 0 |
 | `MinWidth`, `MinHeight`, `MaxWidth`, `MaxHeight` | limits of resizing; 0 means none |
 | `FitContent` | sizes the page area to its page's content, and follows it, within the limits above, as a [flyout's](#size-a-flyout-to-its-content) |
 | `StateKey` | remembers the window's bounds and state under this key, see [below](#remember-where-windows-were) |

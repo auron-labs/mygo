@@ -80,8 +80,11 @@ type WindowOptions struct {
 	// of the whole window.
 	UseContentSize bool
 	// X and Y of the top-left corner. The window is centered when both are
-	// zero.
-	X, Y                int
+	// zero, unless Positioned is set.
+	X, Y int
+	// Positioned places the window at X and Y even when both are zero, as
+	// a bar or panel at a display's top-left corner must be.
+	Positioned          bool
 	MinWidth, MinHeight int
 	MaxWidth, MaxHeight int
 	// FitContent sizes the page area to its page's content, and follows
@@ -770,7 +773,7 @@ func (w *Window) platformOptions(o *WindowOptions) *platform.WindowOptions {
 		Y:                 o.Y,
 		Width:             or(o.Width, 800),
 		Height:            or(o.Height, 600),
-		Center:            o.X == 0 && o.Y == 0,
+		Center:            !o.Positioned && o.X == 0 && o.Y == 0,
 		UseContentSize:    o.UseContentSize,
 		MinSize:           platform.Size{Width: o.MinWidth, Height: o.MinHeight},
 		MaxSize:           platform.Size{Width: o.MaxWidth, Height: o.MaxHeight},
