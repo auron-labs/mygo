@@ -341,6 +341,14 @@ func (w *window) styles() (style, ex uint32) {
 	if !o.Maximizable {
 		style &^= wsMaximizeBox
 	}
+	if o.Frameless && !o.Resizable && !o.Minimizable && !o.Maximizable {
+		// Nothing of an overlapped window's caption or frame is of use to
+		// a frameless one that cannot be resized, minimized or maximized,
+		// and Windows keeps an overlapped window at least SM_CYMIN (about
+		// 39 pixels) tall whatever WM_GETMINMAXINFO says: a popup, as a
+		// bar thinner than a title bar must be, takes any size.
+		style = wsPopup | wsClipChildren
+	}
 	if !o.Focusable {
 		ex |= wsExNoActivate
 	}
