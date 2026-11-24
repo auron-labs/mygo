@@ -55,6 +55,10 @@ type Theme struct {
 	// default. Checkbox fills the boxes of tasks done, and Checkmark draws
 	// their checks: white.
 	Marker, Checkbox, Checkmark ui.Color
+	// CheckboxOutline draws the boxes of tasks done as outlines, with
+	// their checks, in the Checkbox color, instead of filled boxes with
+	// Checkmark checks.
+	CheckboxOutline bool
 	// QuoteBar colors the bar along quotations, QuoteBarWidth DIPs wide
 	// (3), and QuoteText their text, the Muted color by default.
 	QuoteBar, QuoteText ui.Color

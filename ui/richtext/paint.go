@@ -163,10 +163,17 @@ func (v *view) paintMarker(p *ui.Painter, i int, st ParagraphStyle, pv *paraView
 		bx := x - look.indent + (look.indent-box)/2 - look.indent*0.1
 		by := y + line.Y + (line.H-box)/2
 		if st.Checked {
-			p.Fill(ui.Rect{X: bx, Y: by, W: box, H: box}, look.Checkbox, box*0.25)
+			rect := ui.Rect{X: bx, Y: by, W: box, H: box}
+			tick := look.Checkmark
+			if look.CheckboxOutline {
+				p.Stroke(rect, look.Checkbox, box*0.25, 1.25)
+				tick = look.Checkbox
+			} else {
+				p.Fill(rect, look.Checkbox, box*0.25)
+			}
 			var path ui.Path
 			path.MoveTo(bx+box*0.25, by+box*0.52).LineTo(bx+box*0.43, by+box*0.7).LineTo(bx+box*0.76, by+box*0.32)
-			p.StrokePath(&path, max(1.5, box*0.12), look.Checkmark)
+			p.StrokePath(&path, max(1.5, box*0.12), tick)
 		} else {
 			p.Stroke(ui.Rect{X: bx, Y: by, W: box, H: box}, look.Muted, box*0.25, 1.25)
 		}
